@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+      - name: Action metadata parses
+        run: |
+          for f in */action.yaml; do
+            python3 -c "import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); assert d['runs']['using'] == 'composite', sys.argv[1]" "$f"
+            echo "ok $f"
+          done
+
+  # Runs the action exactly as a consumer would, without cache secrets: the
+  # path every fork PR and Dependabot run takes.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: setup
+        uses: ./nix-setup
+        with:
+          nix-path: nixpkgs=channel:nixos-unstable
+          extra-conf: |
+            keep-going = true
+      - name: Nix works, settings applied, cache skipped
+        env:
+          ATTIC: ${{ steps.setup.outputs.attic }}
+        run: |
+          set -euo pipefail
+          nix --version
+          test "$(nix eval --expr '1 + 1')" = 2
+          nix config show | grep -E '^trusted-users = .*runner'
+          nix config show | grep -E '^keep-going = true'
+          test "$NIX_PATH" = "nixpkgs=channel:nixos-unstable"
+          test "$ATTIC" = false
+
+  smoke-arm:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./nix-setup
+      - run: nix --version && test "$(nix eval --expr '1 + 1')" = 2

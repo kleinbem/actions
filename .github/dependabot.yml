@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # The composite actions pin third-party actions by sha; Dependabot keeps
+  # them current. Every consumer then gets the bump through its own
+  # Dependabot PR for kleinbem/actions.
+  - package-ecosystem: github-actions
+    directories: ["/", "/nix-setup"]
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

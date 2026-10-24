@@ -1,0 +1,231 @@
+name: 'Nix setup (kleinbem)'
+description: 'Installs Determinate Nix for a kleinbem repo, and optionally joins NetBird and configures the mesh-only Attic cache as a substituter.'
+
+inputs:
+  github-token:
+    description: 'Token Nix uses for github.com fetches (access-tokens). Pass a GitHub App token when the job reads other private repos or needs a higher rate limit.'
+    required: false
+    default: ${{ github.token }}
+  extra-conf:
+    description: 'Extra nix.conf lines, appended after the defaults (trusted-users = root runner).'
+    required: false
+    default: ''
+  nix-path:
+    description: 'NIX_PATH for the rest of the job, e.g. nixpkgs=channel:nixos-unstable. Empty leaves it unset.'
+    required: false
+    default: ''
+  free-disk-space:
+    description: 'Reclaim ~20 GiB by deleting preinstalled toolchains. For big closures (NixOS systems, VM tests); costs ~30 s, so leave it off for small jobs.'
+    required: false
+    default: 'false'
+  configure-auto-gc:
+    description: 'Let Nix collect garbage when free space drops below 1 GiB (min-free / max-free). For big closure builds.'
+    required: false
+    default: 'false'
+  netbird-setup-key:
+    description: 'EPHEMERAL NetBird setup key (NETBIRD_SETUP_KEY_EPHEMERAL). Together with attic-token the job joins the mesh to reach the cache. Runner peers land in ci-runners and may reach only the cache.'
+    required: false
+    default: ''
+  attic-token:
+    description: 'Attic token: ATTIC_PULL_TOKEN for jobs that only read (PRs, checks), ATTIC_PUSH_TOKEN only for jobs that push. Empty, or no netbird-setup-key, skips the whole cache setup, so fork PRs and Dependabot runs still work.'
+    required: false
+    default: ''
+  attic-endpoint:
+    description: 'Attic server URL.'
+    required: false
+    default: 'https://cache.kleinbem.dev/'
+  attic-cache:
+    description: 'Attic cache name.'
+    required: false
+    default: 'system'
+  attic-mesh-ip:
+    description: 'Fallback mesh IP for the cache host, pinned in /etc/hosts only if NetBird DNS does not answer in time.'
+    required: false
+    default: '100.117.146.201'
+  ca-cert:
+    description: 'Root certificate the cache is served with (internal Caddy CA). Defaults to the copy shipped with this action.'
+    required: false
+    default: ''
+
+outputs:
+  attic:
+    description: "'true' when the Attic cache was configured, so a later step can decide whether to push."
+    value: ${{ steps.attic-on.outputs.enabled }}
+
+runs:
+  using: 'composite'
+  steps:
+    # endersonmenezes/free-disk-space is the maintained successor to the
+    # LVM-juggling easimon/maximize-build-space — same headroom, no mount
+    # surgery (which silently lost log output on big closures).
+    - name: Free disk space
+      if: inputs.free-disk-space == 'true'
+      uses: endersonmenezes/free-disk-space@7901478139cff6e9d44df5972fd8ab8fcade4db1 # v3.2.2
+      with:
+        remove_android: 'true'
+        remove_dotnet: 'true'
+        remove_haskell: 'true'
+        remove_tool_cache: 'true'
+        remove_swap: 'true'
+        remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* *llvm* mysql* dotnet-sdk-*"
+        remove_packages_one_command: 'true'
+        remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle /usr/lib/jvm /home/runner/.rust /usr/local/.ghcup"
+        rm_cmd: "rmz"
+        rmz_version: "3.1.1"
+
+    - name: Install Nix (Determinate)
+      uses: DeterminateSystems/determinate-nix-action@96c5ee93a9dddf2830d31e1da6ec719077336c28 # v3.23.3
+      with:
+        github-token: ${{ inputs.github-token }}
+        extra-conf: |
+          trusted-users = root runner
+          ${{ inputs.extra-conf }}
+
+    - name: Set NIX_PATH
+      if: inputs.nix-path != ''
+      shell: bash
+      env:
+        NIX_PATH_VALUE: ${{ inputs.nix-path }}
+      run: echo "NIX_PATH=$NIX_PATH_VALUE" >> "$GITHUB_ENV"
+
+    - name: Configure Nix auto-gc
+      if: inputs.configure-auto-gc == 'true'
+      shell: bash
+      run: |
+        echo "min-free = 1073741824" | sudo tee -a /etc/nix/nix.conf
+        echo "max-free = 2147483648" | sudo tee -a /etc/nix/nix.conf
+        sudo systemctl restart nix-daemon
+
+    - name: Decide on the cache
+      id: attic-on
+      shell: bash
+      env:
+        HAS_TOKEN: ${{ inputs.attic-token != '' }}
+        HAS_KEY: ${{ inputs.netbird-setup-key != '' }}
+      run: |
+        if [ "$HAS_TOKEN" = true ] && [ "$HAS_KEY" = true ]; then
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "No Attic token or NetBird key (fork PR, Dependabot, or secrets not distributed) — building without the Attic cache."
+        fi
+
+    - name: Join NetBird
+      # The cache is mesh-only (nix-config#137): every job that uses Attic,
+      # pushing or only reading, reaches it over NetBird.
+      if: steps.attic-on.outputs.enabled == 'true'
+      shell: bash
+      env:
+        NETBIRD_SETUP_KEY: ${{ inputs.netbird-setup-key }}
+      run: |
+        set -euo pipefail
+        if ! command -v netbird &> /dev/null; then
+          # Hosted runner images sometimes ship the systemd unit but not the
+          # binary; the leftover unit makes `netbird service install` fail
+          # with "Init already exists".
+          sudo rm -f /etc/systemd/system/netbird.service
+          # Pinned release tarball with its checksum, not `curl install.sh |
+          # sh` as root: this job holds an Attic token and the setup key.
+          # Bump the version and both checksums together (release page:
+          # netbird_<ver>_checksums.txt).
+          NETBIRD_VERSION=0.81.3
+          case "$(uname -m)" in
+            x86_64)  arch=amd64; sha=cbdea310068e35449f034544d5137fefee8f6d948fffd020883ffc8b3bab63b1 ;;
+            aarch64) arch=arm64; sha=980eef938177108bdfa7d802566b6309123592a58631349a78f11cd97c76c22d ;;
+            *) echo "::error::unsupported runner arch $(uname -m)"; exit 1 ;;
+          esac
+          tarball="netbird_${NETBIRD_VERSION}_linux_${arch}.tar.gz"
+          curl -fsSL -o "/tmp/$tarball" "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/$tarball"
+          echo "$sha  /tmp/$tarball" | sha256sum -c -
+          sudo tar -xzf "/tmp/$tarball" -C /usr/local/bin netbird
+          sudo netbird service install
+          sudo systemctl daemon-reload
+        fi
+        if ! command -v netbird &> /dev/null; then
+          echo "::error::NetBird install failed — binary not in PATH after the pinned tarball install"
+          exit 1
+        fi
+        # No `|| true`: without the mesh, pushes 413 on >100 MiB NARs through
+        # Cloudflare and reads fail outright. Fail loud here instead.
+        sudo systemctl start netbird
+        sudo netbird up --setup-key "$NETBIRD_SETUP_KEY"
+
+    - name: Route the cache over NetBird (fail-closed)
+      if: steps.attic-on.outputs.enabled == 'true'
+      shell: bash
+      env:
+        ATTIC_ENDPOINT: ${{ inputs.attic-endpoint }}
+        FALLBACK_IP: ${{ inputs.attic-mesh-ip }}
+      run: |
+        set -euo pipefail
+        host="${ATTIC_ENDPOINT#*://}"; host="${host%%/*}"; host="${host%%:*}"
+        # Prefer the NetBird DNS zone (nix/infra/netbird/dns.tf). A mesh IP
+        # (100.117.0.0/16) proves the zone answered. The zone reaches a fresh
+        # peer via the network-map sync, which can lag `netbird up` by a few
+        # seconds, so retry before falling back to a static /etc/hosts pin.
+        resolved=""
+        dns_answer=""
+        for i in {1..6}; do
+          dns_answer="$(getent ahostsv4 "$host" | awk '{print $1; exit}' || true)"
+          if [[ "$dns_answer" == 100.117.* ]]; then
+            resolved="$dns_answer"
+            echo "$host resolves via NetBird DNS: $resolved (attempt $i)"
+            break
+          fi
+          sleep 5
+        done
+        if [ -z "$resolved" ]; then
+          resolved="$FALLBACK_IP"
+          echo "::warning::$host did not resolve to a mesh IP after 30s (last answer: '${dns_answer:-nothing}') — pinning $resolved in /etc/hosts. The NetBird DNS zone may not reach runner peers."
+          resolvectl status 2>/dev/null | grep -iA2 "netbird\|wt0" | head -10 || true
+          resolvectl query "$host" 2>&1 | head -3 || true
+          echo "$resolved $host" | sudo tee -a /etc/hosts
+        fi
+        # The route must go through NetBird's wt0, or a silently failed
+        # `netbird up` would let traffic fall back to Cloudflare.
+        route="$(ip route get "$resolved")"
+        echo "$route"
+        if ! echo "$route" | grep -q 'dev wt0'; then
+          echo "::error::Route to $host is not via wt0 — bailing before the build."
+          sudo netbird status || true
+          exit 1
+        fi
+        # TCP/443, not ping: ci-runners may reach the cache on TCP/443 only
+        # (zero-trust policy since 2026-07-17); ICMP is dropped.
+        echo "Waiting for NetBird peer connectivity to $host..."
+        for i in {1..15}; do
+          if timeout 2 bash -c "exec 3<>/dev/tcp/$resolved/443" 2>/dev/null; then
+            echo "Connectivity established (TCP 443)."
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "::error::Could not reach $host:443 via NetBird after 30 seconds (ICMP is policy-blocked; this probe is TCP)."
+        sudo netbird status || true
+        exit 1
+
+    - name: Trust the internal Caddy CA
+      if: steps.attic-on.outputs.enabled == 'true'
+      shell: bash
+      env:
+        CA_CERT: ${{ inputs.ca-cert != '' && inputs.ca-cert || format('{0}/caddy-root.crt', github.action_path) }}
+      run: |
+        set -euo pipefail
+        sudo cp "$CA_CERT" /usr/local/share/ca-certificates/kleinbem-caddy-root.crt
+        sudo update-ca-certificates
+        echo "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" >> "$GITHUB_ENV"
+        echo "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" >> "$GITHUB_ENV"
+
+    - name: Configure the Attic cache
+      # Read substituter + auth only. The action's default post-job push
+      # would upload the whole store diff, including everything substituted
+      # from cache.nixos.org; pushing is the workflow's call (e.g.
+      # nix-fast-build --attic-cache), so only what was really built lands
+      # in the cache.
+      if: steps.attic-on.outputs.enabled == 'true'
+      uses: ryanccn/attic-action@dc99f5eb1d5c0495aa26f7b56337b30011fa153e # v0.5.2
+      with:
+        endpoint: ${{ inputs.attic-endpoint }}
+        cache: ${{ inputs.attic-cache }}
+        token: ${{ inputs.attic-token }}
+        skip-push: 'true'
