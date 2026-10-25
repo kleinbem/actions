@@ -77,8 +77,12 @@ runs:
       uses: DeterminateSystems/determinate-nix-action@96c5ee93a9dddf2830d31e1da6ec719077336c28 # v3.23.3
       with:
         github-token: ${{ inputs.github-token }}
+        # Determinate's daemon owns /etc/nix/nix.conf, so settings appended
+        # after install do not stick; everything goes in at install time.
         extra-conf: |
           trusted-users = root runner
+          ${{ inputs.configure-auto-gc == 'true' && 'min-free = 1073741824' || '' }}
+          ${{ inputs.configure-auto-gc == 'true' && 'max-free = 2147483648' || '' }}
           ${{ inputs.extra-conf }}
 
     - name: Set NIX_PATH
@@ -87,14 +91,6 @@ runs:
       env:
         NIX_PATH_VALUE: ${{ inputs.nix-path }}
       run: echo "NIX_PATH=$NIX_PATH_VALUE" >> "$GITHUB_ENV"
-
-    - name: Configure Nix auto-gc
-      if: inputs.configure-auto-gc == 'true'
-      shell: bash
-      run: |
-        echo "min-free = 1073741824" | sudo tee -a /etc/nix/nix.conf
-        echo "max-free = 2147483648" | sudo tee -a /etc/nix/nix.conf
-        sudo systemctl restart nix-daemon
 
     - name: Decide on the cache
       id: attic-on
