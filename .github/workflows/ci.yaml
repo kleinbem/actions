@@ -47,6 +47,29 @@ jobs:
           test "$NIX_PATH" = "nixpkgs=channel:nixos-unstable"
           test "$ATTIC" = false
 
+  # The heavy options big-closure jobs use (nix-config build-all, VM tests).
+  # Off in the plain smoke job, so a major bump of free-disk-space would
+  # otherwise ship untested.
+  smoke-full:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Free space before
+        run: df --output=avail -B1G / | tail -1 | tr -d ' ' > /tmp/before
+      - uses: ./nix-setup
+        with:
+          free-disk-space: 'true'
+          configure-auto-gc: 'true'
+      - name: Space reclaimed, auto-gc configured
+        run: |
+          set -euo pipefail
+          before=$(cat /tmp/before)
+          after=$(df --output=avail -B1G / | tail -1 | tr -d ' ')
+          echo "available: ${before} GiB before, ${after} GiB after"
+          test $((after - before)) -ge 10
+          nix config show | grep -E '^min-free = 1073741824'
+          test "$(nix eval --expr '1 + 1')" = 2
+
   smoke-arm:
     runs-on: ubuntu-24.04-arm
     steps:
