@@ -90,7 +90,9 @@ runs:
       shell: bash
       env:
         NIX_PATH_VALUE: ${{ inputs.nix-path }}
-      run: echo "NIX_PATH=$NIX_PATH_VALUE" >> "$GITHUB_ENV"
+      # The value reaches the shell through env, not template expansion, and
+      # comes from the calling workflow, never from event data.
+      run: echo "NIX_PATH=$NIX_PATH_VALUE" >> "$GITHUB_ENV" # zizmor: ignore[github-env]
 
     - name: Decide on the cache
       id: attic-on
