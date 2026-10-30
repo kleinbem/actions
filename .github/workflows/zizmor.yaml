@@ -1,0 +1,49 @@
+name: zizmor
+
+# Reusable workflow: audits a repo's GitHub Actions workflows, composite actions
+# and Dependabot config with zizmor (https://docs.zizmor.sh) and uploads the
+# findings to the repo's code scanning (Security tab, PR annotations). Code
+# scanning is free on public repos. Consumers call it from their own CI:
+#
+#   jobs:
+#     zizmor:
+#       permissions:
+#         contents: read
+#         security-events: write
+#         actions: read
+#       uses: kleinbem/actions/.github/workflows/zizmor.yaml@<sha>
+#
+# Private repos have no code scanning on this plan: pass
+# `advanced-security: false` and the findings fail the job instead.
+
+on:
+  workflow_call:
+    inputs:
+      advanced-security:
+        description: Upload SARIF to code scanning (false = plain output, fail on findings)
+        type: boolean
+        default: true
+      # Code scanning alerts become PR review threads, which block merges here;
+      # medium keeps zizmor's style hints out of them.
+      min-severity:
+        description: Lowest severity to report (informational, low, medium, high)
+        type: string
+        default: medium
+
+permissions: {}
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read # zizmor-action needs it to upload SARIF from private repos
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          advanced-security: ${{ inputs.advanced-security }}
+          min-severity: ${{ inputs.min-severity }}
