@@ -40,11 +40,20 @@ jobs:
       - id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
       # Allowlist, not "not major": a group is only as safe as its riskiest entry.
+      # fetch-metadata only checks the first commit; a pushed-on fix must not ride along.
       - id: policy
         env:
           DEPS: ${{ steps.meta.outputs.updated-dependencies-json }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           ok=$(jq -r 'length > 0 and all(.[]; .updateType == "version-update:semver-patch" or .updateType == "version-update:semver-minor")' <<<"$DEPS")
+          authors=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '.[] | .author.login // "unknown"' | sort -u)
+          if [ "$authors" != "dependabot[bot]" ]; then
+            echo "::notice::Not auto-merging: commits by $(echo "$authors" | paste -sd, -)"
+            ok=false
+          fi
           echo "auto-merge=$ok" >> "$GITHUB_OUTPUT"
       - if: steps.policy.outputs.auto-merge == 'true'
         id: app-token
