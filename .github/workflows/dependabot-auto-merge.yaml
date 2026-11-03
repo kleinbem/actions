@@ -1,13 +1,15 @@
 name: Dependabot auto-merge
 
-# Reusable workflow: arms auto-merge on Dependabot's patch and minor updates,
-# so they merge once the required checks pass. Majors stay open for a human.
-# Consumers call it on pull_request:
+# Reusable workflow: arms auto-merge on Dependabot PRs whose every update is a
+# patch or minor bump. Anything else (majors, unclassified) stays open for a
+# human. Consumers call it on pull_request:
 #
 #   on: pull_request
 #   permissions: {}
 #   jobs:
 #     auto-merge:
+#       permissions:
+#         pull-requests: read
 #       uses: kleinbem/actions/.github/workflows/dependabot-auto-merge.yaml@<sha> # vX
 #       secrets:
 #         app-id: ${{ secrets.APP_ID }}
@@ -32,11 +34,19 @@ jobs:
   auto-merge:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      pull-requests: read # fetch-metadata verifies the PR's commits
     steps:
       - id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-      - if: steps.meta.outputs.update-type != 'version-update:semver-major'
+      # Allowlist, not "not major": a group is only as safe as its riskiest entry.
+      - id: policy
+        env:
+          DEPS: ${{ steps.meta.outputs.updated-dependencies-json }}
+        run: |
+          ok=$(jq -r 'length > 0 and all(.[]; .updateType == "version-update:semver-patch" or .updateType == "version-update:semver-minor")' <<<"$DEPS")
+          echo "auto-merge=$ok" >> "$GITHUB_OUTPUT"
+      - if: steps.policy.outputs.auto-merge == 'true'
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
@@ -44,7 +54,7 @@ jobs:
           private-key: ${{ secrets.app-private-key }}
           permission-contents: write
           permission-pull-requests: write
-      - if: steps.meta.outputs.update-type != 'version-update:semver-major'
+      - if: steps.policy.outputs.auto-merge == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}

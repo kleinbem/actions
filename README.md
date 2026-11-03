@@ -51,7 +51,7 @@ Lints GitHub Actions workflow files with `actionlint` and `shellcheck`. Requires
 
 ## dependabot-auto-merge (reusable workflow)
 
-Arms auto-merge on Dependabot's patch and minor PRs; majors stay open for review. The merge runs with the repo's GitHub App token (`APP_ID`/`APP_PRIVATE_KEY` Dependabot secrets from `nix/infra/github-secrets.tf`), so main's push workflows still run.
+Arms auto-merge on Dependabot PRs where every update is a patch or minor bump; majors and anything unclassified stay open for review. The repo needs auto-merge and squash merges allowed (github-config sets both). The merge runs with the repo's GitHub App token (`APP_ID`/`APP_PRIVATE_KEY` Dependabot secrets from `nix/infra/github-secrets.tf`), so main's push workflows still run.
 
 ```yaml
 # .github/workflows/dependabot-auto-merge.yaml
@@ -60,13 +60,15 @@ on: pull_request
 permissions: {}
 jobs:
   auto-merge:
+    permissions:
+      pull-requests: read
     uses: kleinbem/actions/.github/workflows/dependabot-auto-merge.yaml@<sha> # v1.2.0
     secrets:
       app-id: ${{ secrets.APP_ID }}
       app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-Pair it with a `cooldown` in the repo's `dependabot.yml`, so nothing auto-merges on the day it is published.
+Pair it with a `cooldown` in the repo's `dependabot.yml`, so version updates don't auto-merge on the day they are published. Security updates skip the cooldown by design.
 
 ## Versioning
 
