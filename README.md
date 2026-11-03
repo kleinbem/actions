@@ -49,6 +49,25 @@ Lints GitHub Actions workflow files with `actionlint` and `shellcheck`. Requires
 | `args` | `-color` | Flags passed to actionlint. |
 | `files` | `""` | Workflow files to check (empty checks all workflows under `.github/workflows`). |
 
+## dependabot-auto-merge (reusable workflow)
+
+Arms auto-merge on Dependabot's patch and minor PRs; majors stay open for review. The merge runs with the repo's GitHub App token (`APP_ID`/`APP_PRIVATE_KEY` Dependabot secrets from `nix/infra/github-secrets.tf`), so main's push workflows still run.
+
+```yaml
+# .github/workflows/dependabot-auto-merge.yaml
+name: Dependabot auto-merge
+on: pull_request
+permissions: {}
+jobs:
+  auto-merge:
+    uses: kleinbem/actions/.github/workflows/dependabot-auto-merge.yaml@<sha> # v1.2.0
+    secrets:
+      app-id: ${{ secrets.APP_ID }}
+      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+Pair it with a `cooldown` in the repo's `dependabot.yml`, so nothing auto-merges on the day it is published.
+
 ## Versioning
 
 Consumers pin a full commit sha with the release tag as a comment; Dependabot bumps it. Releases are `vMAJOR.MINOR.PATCH` tags, and `vMAJOR` moves with them. Breaking input changes bump the major.
