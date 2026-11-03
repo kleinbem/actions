@@ -48,15 +48,16 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
+          set -o pipefail
           ok=$(jq -r 'length > 0 and all(.[]; .updateType == "version-update:semver-patch" or .updateType == "version-update:semver-minor")' <<<"$DEPS")
           authors=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '.[] | .author.login // "unknown"' | sort -u)
           if [ "$authors" != "dependabot[bot]" ]; then
             echo "::notice::Not auto-merging: commits by $(echo "$authors" | paste -sd, -)"
             ok=false
           fi
-          echo "auto-merge=$ok" >> "$GITHUB_OUTPUT"
-      - if: steps.policy.outputs.auto-merge == 'true'
-        id: app-token
+          echo "auto-merge=${ok:-false}" >> "$GITHUB_OUTPUT"
+      # Minted on both outcomes: a failing re-run must also revoke an earlier arm.
+      - id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.app-id }}
@@ -67,4 +68,13 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "$PR_URL"
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
+      - if: steps.policy.outputs.auto-merge != 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [ "$(gh pr view "$PR_URL" --json autoMergeRequest --jq '.autoMergeRequest != null')" = true ]; then
+            gh pr merge --disable-auto "$PR_URL"
+          fi
