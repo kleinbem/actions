@@ -24,7 +24,7 @@ jobs:
         with:
           persist-credentials: false
       - name: actionlint
-        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+        uses: ./actionlint
       - name: Action metadata parses
         run: |
           for f in */action.yaml; do

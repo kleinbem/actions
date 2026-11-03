@@ -32,6 +32,23 @@ Output `attic` is `'true'` when the cache was configured. The action never pushe
 
 The secrets come from `nix/infra/github-secrets.tf` (sops-backed), per repo.
 
+## actionlint
+
+Lints GitHub Actions workflow files with `actionlint` and `shellcheck`. Requires `shellcheck` and `python3` on `PATH`. Both are preinstalled on Ubuntu GitHub-hosted runners; on macOS runners, install `shellcheck` first (e.g. `brew install shellcheck`).
+
+```yaml
+- uses: kleinbem/actions/actionlint@<sha> # v1.0.0
+  with:
+    # Optional flags and custom workflow file targets:
+    args: -color
+    files: ""
+```
+
+| Input | Default | What it does |
+|---|---|---|
+| `args` | `-color` | Flags passed to actionlint. |
+| `files` | `""` | Workflow files to check (empty checks all workflows under `.github/workflows`). |
+
 ## Versioning
 
 Consumers pin a full commit sha with the release tag as a comment; Dependabot bumps it. Releases are `vMAJOR.MINOR.PATCH` tags, and `vMAJOR` moves with them. Breaking input changes bump the major.
