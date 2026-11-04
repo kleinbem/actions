@@ -1,0 +1,99 @@
+name: Dependabot auto-merge
+
+# Reusable workflow: arms auto-merge on Dependabot PRs whose every update is a
+# patch or minor bump. Anything else (majors, unclassified) stays open for a
+# human. Consumers call it on pull_request:
+#
+#   on: pull_request
+#   permissions: {}
+#   jobs:
+#     auto-merge:
+#       permissions:
+#         pull-requests: read
+#       uses: kleinbem/actions/.github/workflows/dependabot-auto-merge.yaml@<sha> # vX
+#       secrets:
+#         app-id: ${{ secrets.APP_ID }}
+#         app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+#
+# The app token makes the app the merger: a merge done with GITHUB_TOKEN would
+# not trigger main's push workflows. APP_ID/APP_PRIVATE_KEY are Dependabot
+# secrets per repo (nix/infra/github-secrets.tf).
+
+on:
+  workflow_call:
+    secrets:
+      # Not required: other PRs call this too and have no Dependabot secrets.
+      app-id:
+        required: false
+      app-private-key:
+        required: false
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    # One run per PR at a time. Each judges the live head and commits, not its
+    # event's, so a superseded or late run can't act on stale state.
+    concurrency:
+      group: dependabot-auto-merge-${{ github.repository }}-${{ github.event.pull_request.number }}
+    permissions:
+      pull-requests: read # fetch-metadata verifies the PR's commits
+    steps:
+      # Read before fetch-metadata; the policy refuses if it moved meanwhile.
+      - id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: echo "sha=$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" >> "$GITHUB_OUTPUT"
+      - id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      # Allowlist, not "not major": a group is only as safe as its riskiest entry.
+      # fetch-metadata only checks the first commit; a pushed-on fix must not ride along.
+      - id: policy
+        env:
+          DEPS: ${{ steps.meta.outputs.updated-dependencies-json }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ steps.head.outputs.sha }}
+        run: |
+          set -o pipefail
+          ok=$(jq -r 'length > 0 and all(.[]; .updateType == "version-update:semver-patch" or .updateType == "version-update:semver-minor")' <<<"$DEPS")
+          echo "head=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          # Author login is only an email match; GitHub's signature (web-flow) is the proof.
+          commits=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '.[] | "\(.author.login // "unknown") \(.committer.login // "unknown") \(.commit.verification.verified)"' | sort -u)
+          if [ "$commits" != "dependabot[bot] web-flow true" ]; then
+            echo "::notice::Not auto-merging: commits not all signed Dependabot commits ($(echo "$commits" | paste -sd, -))"
+            ok=false
+          fi
+          if [ -z "$HEAD_SHA" ] || [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" != "$HEAD_SHA" ]; then
+            echo "::notice::Head moved during the check; the run for the new head decides"
+            ok=false
+          fi
+          echo "auto-merge=${ok:-false}" >> "$GITHUB_OUTPUT"
+      # Runs on every outcome, errors included: a refusing re-run must revoke an earlier arm.
+      - id: app-token
+        if: ${{ !cancelled() }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          permission-contents: write
+          permission-pull-requests: write
+      - if: steps.policy.outputs.auto-merge == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ steps.policy.outputs.head }}
+        run: gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
+      - if: ${{ !cancelled() && steps.policy.outputs.auto-merge != 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [ "$(gh pr view "$PR_URL" --json autoMergeRequest --jq '.autoMergeRequest != null')" = true ]; then
+            gh pr merge --disable-auto "$PR_URL"
+          fi
