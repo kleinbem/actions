@@ -63,9 +63,10 @@ jobs:
           set -o pipefail
           ok=$(jq -r 'length > 0 and all(.[]; .updateType == "version-update:semver-patch" or .updateType == "version-update:semver-minor")' <<<"$DEPS")
           echo "head=$HEAD_SHA" >> "$GITHUB_OUTPUT"
-          authors=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '.[] | .author.login // "unknown"' | sort -u)
-          if [ "$authors" != "dependabot[bot]" ]; then
-            echo "::notice::Not auto-merging: commits by $(echo "$authors" | paste -sd, -)"
+          # Author login is only an email match; GitHub's signature (web-flow) is the proof.
+          commits=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '.[] | "\(.author.login // "unknown") \(.committer.login // "unknown") \(.commit.verification.verified)"' | sort -u)
+          if [ "$commits" != "dependabot[bot] web-flow true" ]; then
+            echo "::notice::Not auto-merging: commits not all signed Dependabot commits ($(echo "$commits" | paste -sd, -))"
             ok=false
           fi
           if [ -z "$HEAD_SHA" ] || [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" != "$HEAD_SHA" ]; then
