@@ -34,6 +34,10 @@ jobs:
   auto-merge:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
+    # One run per PR; a newer head cancels the older run before it can revoke.
+    concurrency:
+      group: dependabot-auto-merge-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       pull-requests: read # fetch-metadata verifies the PR's commits
     steps:
@@ -75,7 +79,9 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [ "$(gh pr view "$PR_URL" --json autoMergeRequest --jq '.autoMergeRequest != null')" = true ]; then
+          state=$(gh pr view "$PR_URL" --json headRefOid,autoMergeRequest --jq '"\(.headRefOid) \(.autoMergeRequest != null)"')
+          if [ "$state" = "$HEAD_SHA true" ]; then
             gh pr merge --disable-auto "$PR_URL"
           fi
