@@ -41,6 +41,13 @@ jobs:
     permissions:
       pull-requests: read # fetch-metadata verifies the PR's commits
     steps:
+      # Read before fetch-metadata; the policy refuses if it moved meanwhile.
+      - id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: echo "sha=$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" >> "$GITHUB_OUTPUT"
       - id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
       # Allowlist, not "not major": a group is only as safe as its riskiest entry.
@@ -51,14 +58,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ steps.head.outputs.sha }}
         run: |
           set -o pipefail
           ok=$(jq -r 'length > 0 and all(.[]; .updateType == "version-update:semver-patch" or .updateType == "version-update:semver-minor")' <<<"$DEPS")
-          head=$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)
-          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "head=$HEAD_SHA" >> "$GITHUB_OUTPUT"
           authors=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '.[] | .author.login // "unknown"' | sort -u)
           if [ "$authors" != "dependabot[bot]" ]; then
             echo "::notice::Not auto-merging: commits by $(echo "$authors" | paste -sd, -)"
+            ok=false
+          fi
+          if [ -z "$HEAD_SHA" ] || [ "$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)" != "$HEAD_SHA" ]; then
+            echo "::notice::Head moved during the check; the run for the new head decides"
             ok=false
           fi
           echo "auto-merge=${ok:-false}" >> "$GITHUB_OUTPUT"
