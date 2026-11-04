@@ -46,6 +46,7 @@ jobs:
       - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
         with:
           # Cross-repo (fork) PRs get a read-only token and can't upload SARIF;
-          # they fail on findings instead.
+          # they fail on findings instead. no-link: read-only fork tokens are
+          # GitHub's design, not a bug.
           advanced-security: ${{ inputs.advanced-security && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
           min-severity: ${{ inputs.min-severity }}
