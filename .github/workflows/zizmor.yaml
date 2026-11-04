@@ -45,5 +45,7 @@ jobs:
           persist-credentials: false
       - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
         with:
-          advanced-security: ${{ inputs.advanced-security }}
+          # Fork PRs get a read-only token and can't upload SARIF; they fail on
+          # findings instead.
+          advanced-security: ${{ inputs.advanced-security && !github.event.pull_request.head.repo.fork }}
           min-severity: ${{ inputs.min-severity }}
