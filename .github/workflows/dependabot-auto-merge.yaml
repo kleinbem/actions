@@ -64,11 +64,13 @@ jobs:
           # Dependabot calls 0.7 -> 0.8 "minor"; below 1.0 Cargo and npm treat it as
           # breaking, so the versions decide. Unparseable versions are refused.
           ok=$(jq -r '
-            def parts: ltrimstr("v") | split(".") | map(tonumber? // null);
-            def breaking: (.prevVersion // "" | parts) as $p | (.newVersion // "" | parts) as $n
-              | $p[0] == null or $n[0] == null or $p[0] != $n[0]
-                or ($p[0] == 0 and $p[1] != $n[1])
-                or ($p[0] == 0 and $p[1] == 0 and $p[2] != $n[2]);
+            def parts: ltrimstr("v") | split(".") | map((capture("^(?<d>[0-9]+)") | .d | tonumber) // null);
+            # Breaking if a compared component differs or is unreadable.
+            def differs($i): .[0][$i] == null or .[1][$i] == null or .[0][$i] != .[1][$i];
+            def breaking: [(.prevVersion // "" | parts), (.newVersion // "" | parts)]
+              | differs(0)
+                or (.[0][0] == 0 and differs(1))
+                or (.[0][0] == 0 and .[0][1] == 0 and differs(2));
             length > 0 and all(.[];
               (.updateType == "version-update:semver-patch" or .updateType == "version-update:semver-minor")
               and (breaking | not))' <<<"$DEPS")
