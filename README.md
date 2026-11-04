@@ -62,7 +62,7 @@ jobs:
   auto-merge:
     permissions:
       pull-requests: read
-    uses: kleinbem/actions/.github/workflows/dependabot-auto-merge.yaml@<sha> # v1.2.0
+    uses: kleinbem/actions/.github/workflows/dependabot-auto-merge.yaml@<sha> # v1.2.1
     secrets:
       app-id: ${{ secrets.APP_ID }}
       app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
