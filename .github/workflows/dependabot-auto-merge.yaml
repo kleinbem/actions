@@ -64,7 +64,10 @@ jobs:
           # Dependabot calls 0.7 -> 0.8 "minor"; below 1.0 Cargo and npm treat it as
           # breaking, so the versions decide. Unparseable versions are refused.
           ok=$(jq -r '
-            def parts: ltrimstr("v") | split(".") | map((capture("^(?<d>[0-9]+)") | .d | tonumber) // null);
+            # Anything but [v]N[.N...][-+suffix] (epochs, dates, SHAs) reads as unparseable.
+            def parts: if test("^v?[0-9]+(\\.[0-9]+)*([-+].*)?$")
+              then ltrimstr("v") | split(".") | map((capture("^(?<d>[0-9]+)") | .d | tonumber) // null)
+              else [] end;
             # Breaking if a compared component differs or is unreadable.
             def differs($i): .[0][$i] == null or .[1][$i] == null or .[0][$i] != .[1][$i];
             def breaking: [(.prevVersion // "" | parts), (.newVersion // "" | parts)]
