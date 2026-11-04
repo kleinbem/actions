@@ -56,8 +56,9 @@ jobs:
             ok=false
           fi
           echo "auto-merge=${ok:-false}" >> "$GITHUB_OUTPUT"
-      # Minted on both outcomes: a failing re-run must also revoke an earlier arm.
+      # Runs on every outcome, errors included: a refusing re-run must revoke an earlier arm.
       - id: app-token
+        if: ${{ !cancelled() }}
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.app-id }}
@@ -70,7 +71,7 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
-      - if: steps.policy.outputs.auto-merge != 'true'
+      - if: ${{ !cancelled() && steps.policy.outputs.auto-merge != 'true' }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
