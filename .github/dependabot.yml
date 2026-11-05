@@ -4,7 +4,7 @@ updates:
   # them current. Every consumer then gets the bump through its own
   # Dependabot PR for kleinbem/actions.
   - package-ecosystem: github-actions
-    directories: ["/", "/nix-setup", "/actionlint"]
+    directories: ["/", "/nix-setup", "/actionlint", "/lint"]
     schedule:
       interval: weekly
     cooldown:

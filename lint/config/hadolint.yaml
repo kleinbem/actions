@@ -1,0 +1,5 @@
+ignored:
+  # Distro mirrors drop old package versions, so pinned apt/apk versions
+  # break the build; the base image digest is the pin.
+  - DL3008
+  - DL3018

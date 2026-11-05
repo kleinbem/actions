@@ -1,0 +1,16 @@
+[extend]
+useDefault = true
+
+# Public material the generic rules mistake for keys. Anything else gets an
+# inline `gitleaks:allow` with a reason, or a repo `.gitleaks.toml`.
+[[allowlists]]
+description = "age public recipients and SSH key file names"
+regexTarget = "match"
+regexes = [
+  '''age1(yubikey1)?[0-9a-z]{50,}''',
+  '''id_(ed25519|ecdsa|rsa)[\w.-]*''',
+]
+
+[[allowlists]]
+description = "sops ciphertext"
+regexes = ['''ENC\[AES256_GCM,data:''']

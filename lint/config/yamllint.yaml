@@ -1,0 +1,21 @@
+# Correctness only (syntax, duplicate keys, truthy values, anchors).
+# Formatting belongs to treefmt.
+extends: default
+rules:
+  braces: disable
+  brackets: disable
+  colons: disable
+  commas: disable
+  comments: disable
+  comments-indentation: disable
+  document-end: disable
+  document-start: disable
+  empty-lines: disable
+  hyphens: disable
+  indentation: disable
+  line-length: disable
+  new-line-at-end-of-file: disable
+  trailing-spaces: disable
+  truthy:
+    allowed-values: ["true", "false", "on", "off"]
+    check-keys: false

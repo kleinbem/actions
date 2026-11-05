@@ -1,0 +1,62 @@
+name: 'fleet-lint (kleinbem)'
+description: 'Secret scan, workflow, shell, YAML, Python, Markdown, Dockerfile, OpenTofu and dependency checks; each runs when its files exist.'
+
+inputs:
+  github-token:
+    description: 'Token for zizmor online audits (read-only is enough).'
+    required: false
+    default: ${{ github.token }}
+  skip:
+    description: 'Space-separated checks to skip. Say why next to it in the caller.'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Commit range for gitleaks
+      id: range
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+        PR_BASE: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        PUSH_BEFORE: ${{ github.event.before }}
+        SHA: ${{ github.sha }}
+        SKIP: ${{ inputs.skip }}
+      run: |
+        set -euo pipefail
+        base='' head=''
+        if [[ " $SKIP " == *" gitleaks "* ]]; then
+          { echo "base="; echo "head="; } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        case $EVENT in
+          pull_request|pull_request_target) base=$PR_BASE head=$PR_HEAD ;;
+          push) base=$PUSH_BEFORE head=$SHA ;;
+        esac
+        # New branch or force push: nothing to diff against, scan the tree.
+        if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+            echo "::error::fleet-lint needs the history: check out with fetch-depth: 0"
+            exit 1
+          fi
+          base=''
+        fi
+        [ "$base" = 0000000000000000000000000000000000000000 ] && base=''
+        { echo "base=$base"; echo "head=$head"; } >> "$GITHUB_OUTPUT"
+
+    - name: Lint
+      shell: bash
+      env:
+        LINT_CONFIG: ${{ github.action_path }}/config
+        LINT_BASE: ${{ steps.range.outputs.base }}
+        LINT_HEAD: ${{ steps.range.outputs.head }}
+        LINT_SKIP: ${{ inputs.skip }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        command -v nix >/dev/null || { echo "::error::fleet-lint needs Nix: run kleinbem/actions/nix-setup first"; exit 1; }
+        tools=$(nix build --no-link --print-out-paths "path:$ACTION_PATH")
+        PATH="$tools/bin:$PATH" bash "$ACTION_PATH/run.sh"
