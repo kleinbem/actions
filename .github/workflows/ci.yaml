@@ -32,6 +32,17 @@ jobs:
             echo "ok $f"
           done
 
+  # The lint action on this repo itself, as a consumer runs it.
+  fleet-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./nix-setup
+      - uses: ./lint
+
   # Runs the action exactly as a consumer would, without cache secrets: the
   # path every fork PR and Dependabot run takes.
   smoke:

@@ -1,0 +1,11 @@
+# Broken content only: dead anchors, malformed tables and links.
+# Formatting belongs to treefmt.
+default: false
+MD011: true  # reversed link syntax
+MD039: true  # spaces inside link text
+MD042: true  # empty links
+MD045: true  # images without alt text
+MD051: true  # link fragments that match no heading
+MD052: true  # reference links with no definition
+MD053: true  # unused link definitions
+MD056: true  # table rows with the wrong column count

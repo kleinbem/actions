@@ -49,6 +49,53 @@ Lints GitHub Actions workflow files with `actionlint` and `shellcheck`. Requires
 | `args` | `-color` | Flags passed to actionlint. |
 | `files` | `""` | Workflow files to check (empty checks all workflows under `.github/workflows`). |
 
+## lint
+
+One required check for every repo: each tool runs only when the repo has its file types, every finding is reported, and the job fails if any tool failed. Tools come from `lint/flake.nix` (nixpkgs, locked), so run the action after `nix-setup`. It needs no secrets.
+
+```yaml
+# .github/workflows/fleet-lint.yaml
+name: fleet-lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions: {}
+jobs:
+  fleet-lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@<sha> # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks scans every commit of the PR
+          persist-credentials: false
+      - uses: kleinbem/actions/nix-setup@<sha> # v1.3.0
+      - uses: kleinbem/actions/lint@<sha> # v1.3.0
+```
+
+| Check | Runs when the repo has | Notes |
+|---|---|---|
+| gitleaks | always | PR and push: the new commits; otherwise the tree |
+| actionlint | workflows | with shellcheck on `run:` blocks |
+| action-shellcheck | composite `action.yaml` | actionlint doesn't read them |
+| zizmor | workflows, actions, `dependabot.yml` | fails on medium and up |
+| shellcheck | `*.sh`, `*.bash`, shell shebangs | |
+| yamllint | YAML | correctness rules only |
+| ruff | Python | `E4,E7,E9,F,S` minus `S101,S603,S607`, ignoring the repo's own rule set |
+| markdownlint | Markdown | broken links, anchors and tables only |
+| hadolint | Dockerfiles | |
+| tofu, tflint, trivy | `*.tf` | fmt + validate per directory; trivy HIGH and CRITICAL |
+| osv-scanner | language lockfiles | not the Nix closure |
+
+| Input | Default | What it does |
+|---|---|---|
+| `github-token` | `github.token` | Read token for zizmor's online audits. |
+| `skip` | | Space-separated checks to skip. Give the reason next to it. |
+
+A repo's own `.gitleaks.toml`, `.yamllint*`, `.markdownlint*`, `.hadolint.yaml`, `.trivyignore*` or `<dir>/.tflint.hcl` replaces the default in `lint/config/`. Silence one finding inline where the tool allows it (`gitleaks:allow`, `# noqa: S...`, `# zizmor: ignore[...]`, `# shellcheck disable=...`), with the reason. Checkov isn't included: nixpkgs' build depends on a package marked insecure (python ecdsa).
+
 ## dependabot-auto-merge (reusable workflow)
 
 Arms auto-merge on Dependabot PRs where every update is a patch or minor bump; majors and anything unclassified stay open for review. The repo needs auto-merge and squash merges allowed (github-config sets both). The merge runs with the repo's GitHub App token (`APP_ID`/`APP_PRIVATE_KEY` Dependabot secrets from `nix/infra/github-secrets.tf`), so main's push workflows still run.
@@ -73,6 +120,8 @@ Pair it with a `cooldown` in the repo's `dependabot.yml`, so version updates don
 ## Versioning
 
 Consumers pin a full commit sha with the release tag as a comment; Dependabot bumps it. Releases are `vMAJOR.MINOR.PATCH` tags, and `vMAJOR` moves with them. Breaking input changes bump the major.
+
+Refresh the lint tools first (`nix flake update --flake ./lint`, in its own PR), so each release ships current tools.
 
 ```bash
 git tag -a v1.1.0 -m "nix-setup: ..." && git tag -f v1 v1.1.0
