@@ -84,7 +84,9 @@ fi
 mapfile -t mds < <(match '\.md$')
 if [ ${#mds[@]} -gt 0 ]; then
   mcfg=()
-  ls .markdownlint* >/dev/null 2>&1 || mcfg=(--config "$cfg/markdownlint.yaml")
+  found=
+  for c in .markdownlint{,-cli2}.{jsonc,json,yaml,yml,cjs,mjs}; do [ -f "$c" ] && found=1; done
+  [ -n "$found" ] || mcfg=(--config "$cfg/markdownlint.yaml")
   check markdownlint markdownlint-cli2 "${mcfg[@]}" "${mds[@]}"
 fi
 
@@ -97,7 +99,7 @@ if [ ${#dockers[@]} -gt 0 ]; then
 fi
 
 # --- OpenTofu ---
-mapfile -t tfdirs < <(match '\.tf$' | xargs -r -n1 dirname | sort -u)
+mapfile -t tfdirs < <(match '\.tf$' | while IFS= read -r f; do dirname "$f"; done | sort -u)
 tofu_run() {
   local d rc=0
   tofu fmt -check -recursive -diff . || rc=1

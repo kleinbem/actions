@@ -17,7 +17,8 @@ for path in sys.argv[1:]:
         # Same substitution actionlint uses: expressions become a plain word.
         body = EXPR.sub("_expr_", run)
         with tempfile.NamedTemporaryFile("w", suffix=".sh") as f:
-            f.write("#!/usr/bin/env bash\n" + body)
+            dialect = "sh" if re.match(r"sh\b", shell) else "bash"
+            f.write(f"#!/usr/bin/env {dialect}\n" + body)
             f.flush()
             p = subprocess.run(["shellcheck", "-f", "gcc", f.name], capture_output=True, text=True)
         if p.returncode:

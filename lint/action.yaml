@@ -23,9 +23,14 @@ runs:
         PR_HEAD: ${{ github.event.pull_request.head.sha }}
         PUSH_BEFORE: ${{ github.event.before }}
         SHA: ${{ github.sha }}
+        SKIP: ${{ inputs.skip }}
       run: |
         set -euo pipefail
         base='' head=''
+        if [[ " $SKIP " == *" gitleaks "* ]]; then
+          { echo "base="; echo "head="; } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
         case $EVENT in
           pull_request|pull_request_target) base=$PR_BASE head=$PR_HEAD ;;
           push) base=$PUSH_BEFORE head=$SHA ;;
