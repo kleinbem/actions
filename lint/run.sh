@@ -28,7 +28,9 @@ gitleaks_run() {
   local conf=()
   [ -f .gitleaks.toml ] || conf=(--config "$cfg/gitleaks.toml")
   if [ -n "${LINT_BASE:-}" ] && [ -n "${LINT_HEAD:-}" ]; then
-    gitleaks git --redact --no-banner "${conf[@]}" --log-opts="${LINT_BASE}..${LINT_HEAD}" .
+    # remerge: a merge's own changes (conflict resolutions), not its parents'.
+    gitleaks git --redact --no-banner "${conf[@]}" \
+      --log-opts="--diff-merges=remerge ${LINT_BASE}..${LINT_HEAD}" .
   else
     gitleaks dir --redact --no-banner "${conf[@]}" .
   fi
