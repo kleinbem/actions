@@ -55,9 +55,8 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    # endersonmenezes/free-disk-space is the maintained successor to the
-    # LVM-juggling easimon/maximize-build-space — same headroom, no mount
-    # surgery (which silently lost log output on big closures).
+    # Deletes in place rather than remounting space via LVM, which silently
+    # lost log output on big closures. no-link: a choice of action, nothing to wait on.
     - name: Free disk space
       if: inputs.free-disk-space == 'true'
       uses: endersonmenezes/free-disk-space@8b8cd4e2277836962939a8f3b4ea0ee4bc006156 # v4.0.1
@@ -188,8 +187,8 @@ runs:
           sudo netbird status || true
           exit 1
         fi
-        # TCP/443, not ping: ci-runners may reach the cache on TCP/443 only
-        # (zero-trust policy since 2026-07-17); ICMP is dropped.
+        # TCP/443, not ping: the NetBird policy lets ci-runners reach the
+        # cache on TCP/443 only, so ICMP is dropped.
         echo "Waiting for NetBird peer connectivity to $host..."
         for i in {1..15}; do
           if timeout 2 bash -c "exec 3<>/dev/tcp/$resolved/443" 2>/dev/null; then
@@ -215,11 +214,10 @@ runs:
         echo "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" >> "$GITHUB_ENV"
 
     - name: Configure the Attic cache
-      # Read substituter + auth only. The action's default post-job push
-      # would upload the whole store diff, including everything substituted
-      # from cache.nixos.org; pushing is the workflow's call (e.g.
-      # nix-fast-build --attic-cache), so only what was really built lands
-      # in the cache.
+      # Substituter + auth only. The default post-job push would upload the
+      # whole store diff, cache.nixos.org paths included; the workflow pushes
+      # what it really built (e.g. nix-fast-build --attic-cache). no-link: our push
+      # policy, not a bug.
       if: steps.attic-on.outputs.enabled == 'true'
       uses: ryanccn/attic-action@dc99f5eb1d5c0495aa26f7b56337b30011fa153e # v0.5.2
       with:
