@@ -54,7 +54,7 @@ fi
 mapfile -t shs < <(
   for f in "${files[@]}"; do
     [ -f "$f" ] || continue
-    case $f in
+    case ${f##*/} in
       *.sh|*.bash) echo "$f" ;;
       *.*) ;;
       *) head -c 64 "$f" 2>/dev/null | head -1 | grep -qE '^#!.*\b(ba)?sh\b' && echo "$f" ;;

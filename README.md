@@ -94,7 +94,7 @@ jobs:
 | `github-token` | `github.token` | Read token for zizmor's online audits. |
 | `skip` | | Space-separated checks to skip. Give the reason next to it. |
 
-A repo's own `.gitleaks.toml`, `.yamllint*`, `.markdownlint*`, `.hadolint.yaml`, `.trivyignore*` or `<dir>/.tflint.hcl` replaces the default in `lint/config/`. Silence one finding inline where the tool allows it (`gitleaks:allow`, `# noqa: S...`, `# zizmor: ignore[...]`, `# shellcheck disable=...`), with the reason. Checkov isn't included: nixpkgs' build depends on a package marked insecure (python ecdsa).
+A repo's own `.gitleaks.toml`, `.yamllint*`, `.markdownlint*`, `.hadolint.yaml`, `.trivyignore*` or `<dir>/.tflint.hcl` replaces the default in `lint/config/`. Silence one finding inline where the tool allows it (`gitleaks:allow`, `# noqa: S...`, `# zizmor: ignore[...]`, `# shellcheck disable=...`), with the reason. Checkov isn't included: nixpkgs' build depends on python ecdsa, marked insecure for CVE-2024-23342, which upstream won't fix (tlsfuzzer/python-ecdsa#330).
 
 ## dependabot-auto-merge (reusable workflow)
 
