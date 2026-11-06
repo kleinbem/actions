@@ -7,7 +7,7 @@ inputs:
     required: false
     default: ${{ github.token }}
   extra-conf:
-    description: 'Extra nix.conf lines, appended after the defaults (trusted-users = root runner).'
+    description: 'Extra nix.conf lines, appended after the defaults (trusted-users = root runner, fallback = true).'
     required: false
     default: ''
   nix-path:
@@ -80,6 +80,8 @@ runs:
         # after install do not stick; everything goes in at install time.
         extra-conf: |
           trusted-users = root runner
+          # A failed cache download builds the path instead of failing the job.
+          fallback = true
           ${{ inputs.configure-auto-gc == 'true' && 'min-free = 1073741824' || '' }}
           ${{ inputs.configure-auto-gc == 'true' && 'max-free = 2147483648' || '' }}
           ${{ inputs.extra-conf }}
