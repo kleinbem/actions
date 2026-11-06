@@ -23,9 +23,11 @@ if ! current=$(gh api "repos/$REPO/contents/$LOCK?ref=$base" --jq .sha 2>"$RUNNE
 fi
 if [ "$current" = "$(git hash-object "$LOCK")" ]; then
   echo "$LOCK unchanged, nothing to do."
-  # Main has this lock already: an open PR would land an older one.
+  # Main has this lock already: an open PR would land an older one. Checked
+  # on main itself, which can be ahead of the base.
   pr=$(open_pr)
-  if [ -z "$BASE_SHA" ] && [ -n "$pr" ]; then
+  if [ -z "$BASE_SHA" ] && [ -n "$pr" ] &&
+    [ "$(gh api "repos/$REPO/contents/$LOCK?ref=main" --jq .sha)" = "$(git hash-object "$LOCK")" ]; then
     gh pr close --repo "$REPO" "$pr" --comment "main has this lock already."
   fi
   echo "pr=" >> "$GITHUB_OUTPUT"
