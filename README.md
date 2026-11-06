@@ -87,6 +87,7 @@ jobs:
 | markdownlint | Markdown | broken links, anchors and tables only |
 | hadolint | Dockerfiles | |
 | tofu, tflint, trivy | `*.tf` | fmt + validate per directory; trivy HIGH and CRITICAL |
+| dependabot-coverage | always | each workflow dir, composite action using `uses:`, manifest (npm, cargo, gomod, pip/uv, docker, compose, OpenTofu root, …) needs a `dependabot.yml` entry for its directory |
 | osv-scanner | language lockfiles | not the Nix closure |
 
 | Input | Default | What it does |
