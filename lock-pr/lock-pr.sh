@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Puts $LOCK from the working tree on $BRANCH and makes sure an open PR with
-# auto-merge carries it. Env: GH_TOKEN REPO LOCK BRANCH BASE_SHA TITLE BODY.
+# auto-merge carries it. Env: GH_TOKEN REPO LOCK BRANCH BASE_SHA RESET_TO TITLE BODY.
 set -euo pipefail
 
 if [ -n "$BASE_SHA" ]; then
   base=$BASE_SHA
   echo "extending $BRANCH at $base"
 else
-  base=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)
+  # Not main's head now: a lock change merged meanwhile must not be reverted.
+  base=$RESET_TO
 fi
 
 open_pr() {

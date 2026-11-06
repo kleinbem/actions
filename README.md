@@ -48,7 +48,8 @@ Commits an updated `flake.lock` to a bot branch (`update-flake-lock`) as a GitHu
 | `working-directory` | `.` | Checkout holding the updated lock. |
 | `lock-file` | `flake.lock` | Path of the lock in the repo. |
 | `branch` | `update-flake-lock` | Bot branch. |
-| `base-sha` | | Commit to extend (an open lock PR's head). Empty resets the branch to main. |
+| `base-sha` | | Commit to extend (an open lock PR's head). Empty resets the branch to `reset-to`. |
+| `reset-to` | `github.sha` | Commit the branch is reset to: the one the lock was updated from. If main's lock changed since, the PR conflicts instead of reverting that change. |
 | `title`, `body` | | PR title (also the commit headline) and body. |
 
 Output `pr` is the PR number, empty when the lock did not change.
