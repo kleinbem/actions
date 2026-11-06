@@ -1,0 +1,133 @@
+# actions
+
+Shared GitHub Actions for the kleinbem repos. An action lives here once two or more repos use it; until then it stays in the repo that needs it.
+
+## nix-setup
+
+Installs Determinate Nix and, when the job has the secrets, joins NetBird and configures the mesh-only Attic cache as a substituter.
+
+```yaml
+- uses: kleinbem/actions/nix-setup@<sha> # v1.0.0
+  with:
+    # Optional: read from the Attic cache. Both secrets or nothing; without
+    # them (fork PRs, Dependabot) the job just builds without the cache.
+    netbird-setup-key: ${{ secrets.NETBIRD_SETUP_KEY_EPHEMERAL }}
+    attic-token: ${{ secrets.ATTIC_PULL_TOKEN }}
+```
+
+| Input | Default | What it does |
+|---|---|---|
+| `github-token` | `github.token` | Token for github.com fetches. Pass an App token when the job reads other repos or needs a higher rate limit. |
+| `extra-conf` | | Extra `nix.conf` lines after `trusted-users = root runner`. |
+| `nix-path` | | Sets `NIX_PATH` for the rest of the job. |
+| `free-disk-space` | `false` | Reclaims ~20 GiB. For NixOS systems and VM tests. |
+| `configure-auto-gc` | `false` | GC when free space drops below 1 GiB. For big closures. |
+| `netbird-setup-key` | | Ephemeral NetBird key. Runner peers land in `ci-runners` and may reach only the cache. |
+| `attic-token` | | `ATTIC_PULL_TOKEN` for reading, `ATTIC_PUSH_TOKEN` only for jobs that push. |
+| `attic-endpoint`, `attic-cache` | `https://cache.kleinbem.dev/`, `system` | The cache. |
+| `attic-mesh-ip` | `100.117.146.201` | Fallback `/etc/hosts` pin if NetBird DNS does not answer. |
+| `ca-cert` | bundled `caddy-root.crt` | Root CA the cache is served with. |
+
+Output `attic` is `'true'` when the cache was configured. The action never pushes: a job that should push does it itself, for example with `nix-fast-build --attic-cache system`, so only paths it really built land in the cache.
+
+The secrets come from `nix/infra/github-secrets.tf` (sops-backed), per repo.
+
+## actionlint
+
+Lints GitHub Actions workflow files with `actionlint` and `shellcheck`. Requires `shellcheck` and `python3` on `PATH`. Both are preinstalled on Ubuntu GitHub-hosted runners; on macOS runners, install `shellcheck` first (e.g. `brew install shellcheck`).
+
+```yaml
+- uses: kleinbem/actions/actionlint@<sha> # v1.0.0
+  with:
+    # Optional flags and custom workflow file targets:
+    args: -color
+    files: ""
+```
+
+| Input | Default | What it does |
+|---|---|---|
+| `args` | `-color` | Flags passed to actionlint. |
+| `files` | `""` | Workflow files to check (empty checks all workflows under `.github/workflows`). |
+
+## lint
+
+One required check for every repo: each tool runs only when the repo has its file types, every finding is reported, and the job fails if any tool failed. Tools come from `lint/flake.nix` (nixpkgs, locked), so run the action after `nix-setup`. It needs no secrets.
+
+```yaml
+# .github/workflows/fleet-lint.yaml
+name: fleet-lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions: {}
+jobs:
+  fleet-lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@<sha> # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks scans every commit of the PR
+          persist-credentials: false
+      - uses: kleinbem/actions/nix-setup@<sha> # v1.3.0
+      - uses: kleinbem/actions/lint@<sha> # v1.3.0
+```
+
+| Check | Runs when the repo has | Notes |
+|---|---|---|
+| gitleaks | always | PR and push: the new commits; otherwise the tree |
+| actionlint | workflows | with shellcheck on `run:` blocks |
+| action-shellcheck | composite `action.yaml` | actionlint doesn't read them |
+| zizmor | workflows, actions, `dependabot.yml` | fails on medium and up |
+| shellcheck | `*.sh`, `*.bash`, shell shebangs | |
+| yamllint | YAML | correctness rules only |
+| ruff | Python | `E4,E7,E9,F,S` minus `S101,S603,S607`, ignoring the repo's own rule set |
+| markdownlint | Markdown | broken links, anchors and tables only |
+| hadolint | Dockerfiles | |
+| tofu, tflint, trivy | `*.tf` | fmt + validate per directory; trivy HIGH and CRITICAL |
+| osv-scanner | language lockfiles | not the Nix closure |
+
+| Input | Default | What it does |
+|---|---|---|
+| `github-token` | `github.token` | Read token for zizmor's online audits. |
+| `skip` | | Space-separated checks to skip. Give the reason next to it. |
+
+A repo's own `.gitleaks.toml`, `.yamllint*`, `.markdownlint*`, `.hadolint.yaml`, `.trivyignore*` or `<dir>/.tflint.hcl` replaces the default in `lint/config/`. Silence one finding inline where the tool allows it (`gitleaks:allow`, `# noqa: S...`, `# zizmor: ignore[...]`, `# shellcheck disable=...`), with the reason. Checkov isn't included: nixpkgs' build depends on a package marked insecure (python ecdsa).
+
+## dependabot-auto-merge (reusable workflow)
+
+Arms auto-merge on Dependabot PRs where every update is a patch or minor bump; majors and anything unclassified stay open for review. The repo needs auto-merge and squash merges allowed (github-config sets both). The merge runs with the repo's GitHub App token (`APP_ID`/`APP_PRIVATE_KEY` Dependabot secrets from `nix/infra/github-secrets.tf`), so main's push workflows still run.
+
+```yaml
+# .github/workflows/dependabot-auto-merge.yaml
+name: Dependabot auto-merge
+on: pull_request
+permissions: {}
+jobs:
+  auto-merge:
+    permissions:
+      pull-requests: read
+    uses: kleinbem/actions/.github/workflows/dependabot-auto-merge.yaml@<sha> # v1.2.1
+    secrets:
+      app-id: ${{ secrets.APP_ID }}
+      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+Pair it with a `cooldown` in the repo's `dependabot.yml`, so version updates don't auto-merge on the day they are published. Security updates skip the cooldown by design.
+
+## Versioning
+
+Consumers pin a full commit sha with the release tag as a comment; Dependabot bumps it. Releases are `vMAJOR.MINOR.PATCH` tags, and `vMAJOR` moves with them. Breaking input changes bump the major.
+
+Refresh the lint tools first (`nix flake update --flake ./lint`, in its own PR), so each release ships current tools.
+
+```bash
+git tag -a v1.1.0 -m "nix-setup: ..." && git tag -f v1 v1.1.0
+git push origin v1.1.0 && git push -f origin v1
+```
+
+## Bundled CA
+
+`nix-setup/caddy-root.crt` is a copy of `nix-config/pki/caddy-root.crt` (Caddy Local Authority - 2026 ECC Root, valid to 2036). If the root rotates, update both; nix-config passes its own copy through `ca-cert`.

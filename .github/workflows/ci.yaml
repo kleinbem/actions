@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    uses: ./.github/workflows/zizmor.yaml
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: actionlint
+        uses: ./actionlint
+      - name: Action metadata parses
+        run: |
+          for f in */action.yaml; do
+            python3 -c "import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); assert d['runs']['using'] == 'composite', sys.argv[1]" "$f"
+            echo "ok $f"
+          done
+
+  # The lint action on this repo itself, as a consumer runs it.
+  fleet-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./nix-setup
+      - uses: ./lint
+
+  # Runs the action exactly as a consumer would, without cache secrets: the
+  # path every fork PR and Dependabot run takes.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: setup
+        uses: ./nix-setup
+        with:
+          nix-path: nixpkgs=channel:nixos-unstable
+          extra-conf: |
+            keep-going = true
+      - name: Nix works, settings applied, cache skipped
+        env:
+          ATTIC: ${{ steps.setup.outputs.attic }}
+        run: |
+          set -euo pipefail
+          nix --version
+          test "$(nix eval --expr '1 + 1')" = 2
+          nix config show | grep -E '^trusted-users = .*runner'
+          nix config show | grep -E '^keep-going = true'
+          test "$NIX_PATH" = "nixpkgs=channel:nixos-unstable"
+          test "$ATTIC" = false
+
+  # The heavy options big-closure jobs use (nix-config build-all, VM tests).
+  # Off in the plain smoke job, so a major bump of free-disk-space would
+  # otherwise ship untested.
+  smoke-full:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Free space before
+        run: df --output=avail -B1G / | tail -1 | tr -d ' ' > /tmp/before
+      - uses: ./nix-setup
+        with:
+          free-disk-space: 'true'
+          configure-auto-gc: 'true'
+      - name: Space reclaimed, auto-gc configured
+        run: |
+          set -euo pipefail
+          before=$(cat /tmp/before)
+          after=$(df --output=avail -B1G / | tail -1 | tr -d ' ')
+          echo "available: ${before} GiB before, ${after} GiB after"
+          test $((after - before)) -ge 10
+          nix config show | grep -E '^min-free = 1073741824'
+          test "$(nix eval --expr '1 + 1')" = 2
+
+  smoke-arm:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./nix-setup
+      - run: nix --version && test "$(nix eval --expr '1 + 1')" = 2
+      - uses: ./lint

@@ -1,0 +1,3 @@
+misconfigurations:
+  # Public repositories are public on purpose.
+  - id: GIT-0001
