@@ -42,7 +42,7 @@ fi
 # createCommitOnBranch: GitHub signs the commit, which the rulesets require.
 # The content goes through a file: a big lock in base64 can pass the 128 KiB
 # limit for one argument.
-base64 -w0 "$LOCK" >"$RUNNER_TEMP/lock.b64"
+base64 <"$LOCK" | tr -d '\n' >"$RUNNER_TEMP/lock.b64" # GNU and BSD base64 alike
 jq -n \
   --arg repo "$REPO" --arg branch "$BRANCH" --arg sha "$base" \
   --arg path "$LOCK" --rawfile content "$RUNNER_TEMP/lock.b64" --arg headline "$TITLE" \
