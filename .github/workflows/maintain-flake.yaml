@@ -1,0 +1,91 @@
+name: Maintain flake
+
+# Reusable workflow: `nix flake update`, a validation of the new lock, then a
+# PR with auto-merge for it (lock-pr). The repo's checks run on that PR and
+# decide whether it lands. Consumers call it on a schedule:
+#
+#   on:
+#     workflow_dispatch:
+#     schedule:
+#       - cron: '15 2 * * *'
+#   permissions: {}
+#   jobs:
+#     maintain:
+#       uses: kleinbem/actions/.github/workflows/maintain-flake.yaml@<sha> # vX
+#       secrets:
+#         app-id: ${{ secrets.APP_ID }}
+#         app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+#
+# The App token opens the PR so its checks run (a GITHUB_TOKEN PR triggers
+# none). APP_ID/APP_PRIVATE_KEY come from nix/infra/github-secrets.tf.
+
+on:
+  workflow_call:
+    inputs:
+      validate:
+        description: Shell run on the updated lock; a failure stops before the PR.
+        type: string
+        default: nix flake check --no-build
+      nix-path:
+        description: NIX_PATH for the update and the validation, e.g. nixpkgs=channel:nixos-unstable.
+        type: string
+        default: ''
+    secrets:
+      app-id:
+        required: true
+      app-private-key:
+        required: true
+
+permissions: {}
+
+# Two runs never race on the lock branch.
+concurrency:
+  group: maintain-flake-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint an App token for checkout and fetches
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          permission-contents: read
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - uses: kleinbem/actions/nix-setup@eeeb7587a5ee4199799985e92b7dfb93e0e9895c # v1.5.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          nix-path: ${{ inputs.nix-path }}
+
+      - name: Update flake inputs
+        run: nix flake update
+
+      - name: Validate the new lock
+        env:
+          VALIDATE: ${{ inputs.validate }}
+        run: bash -euo pipefail -c "$VALIDATE"
+
+      # App tokens live an hour, and a validation can take longer.
+      - name: Mint a fresh token for the PR
+        id: pr-token
+        if: github.ref == 'refs/heads/main'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open or update the lock PR
+        if: github.ref == 'refs/heads/main'
+        uses: kleinbem/actions/lock-pr@eeeb7587a5ee4199799985e92b7dfb93e0e9895c # v1.5.0
+        with:
+          token: ${{ steps.pr-token.outputs.token }}

@@ -139,6 +139,33 @@ jobs:
 
 Pair it with a `cooldown` in the repo's `dependabot.yml`, so version updates don't auto-merge on the day they are published. Security updates skip the cooldown by design.
 
+## maintain-flake (reusable workflow)
+
+The nightly `flake.lock` update: `nix flake update`, a validation of the new lock, then a PR with auto-merge through `lock-pr`. The repo's own checks run on that PR and decide whether it lands. The PR is opened with the repo's GitHub App token (`APP_ID`/`APP_PRIVATE_KEY` from `nix/infra/github-secrets.tf`), so its checks run.
+
+```yaml
+# .github/workflows/maintain.yaml
+name: Maintain Flake
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 2 * * *'
+permissions: {}
+jobs:
+  maintain:
+    uses: kleinbem/actions/.github/workflows/maintain-flake.yaml@<sha> # v1.6.0
+    with:
+      validate: nix flake check --no-build # the default
+    secrets:
+      app-id: ${{ secrets.APP_ID }}
+      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+| Input | Default | What it does |
+|---|---|---|
+| `validate` | `nix flake check --no-build` | Shell (bash, `-euo pipefail`) run on the updated lock. A failure stops before the PR. |
+| `nix-path` | | `NIX_PATH` for the update and validation, e.g. `nixpkgs=channel:nixos-unstable`. |
+
 ## Versioning
 
 Consumers pin a full commit sha with the release tag as a comment; Dependabot bumps it. Releases are `vMAJOR.MINOR.PATCH` tags, and `vMAJOR` moves with them. Breaking input changes bump the major.
