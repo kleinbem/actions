@@ -129,6 +129,9 @@ if [ ${#tfdirs[@]} -gt 0 ]; then
 fi
 
 # --- dependencies ---
+# Every manifest needs a dependabot.yml entry; Dependabot skips unlisted ones silently.
+dependabot_coverage_run() { printf '%s\n' "${files[@]}" | python3 "$cfg/dependabot-coverage.py"; }
+check dependabot-coverage dependabot_coverage_run
 if [ -n "$(match '(^|/)(Cargo\.lock|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|uv\.lock|poetry\.lock|requirements[^/]*\.txt|go\.mod)$')" ]; then
   check osv-scanner osv-scanner scan source -r .
 fi
