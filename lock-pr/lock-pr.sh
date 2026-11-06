@@ -10,10 +10,23 @@ else
   base=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)
 fi
 
-# Same content as the base: nothing to commit.
-current=$(gh api "repos/$REPO/contents/$LOCK?ref=$base" --jq .sha 2>/dev/null || true)
+open_pr() {
+  gh pr list --repo "$REPO" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty'
+}
+
+# The blob sha of the lock at the base; empty when it has none yet. Any other
+# lookup error stops here, before the branch is touched.
+if ! current=$(gh api "repos/$REPO/contents/$LOCK?ref=$base" --jq .sha 2>"$RUNNER_TEMP/lookup.err"); then
+  grep -q 'HTTP 404' "$RUNNER_TEMP/lookup.err" || { cat "$RUNNER_TEMP/lookup.err" >&2; exit 1; }
+  current=""
+fi
 if [ "$current" = "$(git hash-object "$LOCK")" ]; then
   echo "$LOCK unchanged, nothing to do."
+  # Main has this lock already: an open PR would land an older one.
+  pr=$(open_pr)
+  if [ -z "$BASE_SHA" ] && [ -n "$pr" ]; then
+    gh pr close --repo "$REPO" "$pr" --comment "main has this lock already."
+  fi
   echo "pr=" >> "$GITHUB_OUTPUT"
   exit 0
 fi
@@ -27,9 +40,12 @@ if [ -z "$BASE_SHA" ]; then
 fi
 
 # createCommitOnBranch: GitHub signs the commit, which the rulesets require.
+# The content goes through a file: a big lock in base64 can pass the 128 KiB
+# limit for one argument.
+base64 -w0 "$LOCK" >"$RUNNER_TEMP/lock.b64"
 jq -n \
   --arg repo "$REPO" --arg branch "$BRANCH" --arg sha "$base" \
-  --arg path "$LOCK" --arg content "$(base64 -w0 "$LOCK")" --arg headline "$TITLE" \
+  --arg path "$LOCK" --rawfile content "$RUNNER_TEMP/lock.b64" --arg headline "$TITLE" \
   --arg query 'mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }' \
   '{query: $query, variables: {input: {
       branch: {repositoryNameWithOwner: $repo, branchName: $branch},
@@ -41,10 +57,12 @@ jq -n \
 # Only an open PR counts. A reset can close the old one (zero diff for an
 # instant), and a closed PR can't always be reopened once its branch moved,
 # so open a new one instead.
-pr=$(gh pr list --repo "$REPO" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+pr=$(open_pr)
 if [ -z "$pr" ]; then
-  url=$(gh pr create --repo "$REPO" --head "$BRANCH" --base main --title "$TITLE" --body "$BODY")
-  pr=${url##*/}
+  # A concurrent run can open it first; then use that one.
+  gh pr create --repo "$REPO" --head "$BRANCH" --base main --title "$TITLE" --body "$BODY" || true
+  pr=$(open_pr)
+  [ -n "$pr" ] || { echo "::error::no open PR for $BRANCH" >&2; exit 1; }
 fi
 echo "pr=$pr" >> "$GITHUB_OUTPUT"
 
