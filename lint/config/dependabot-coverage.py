@@ -67,7 +67,9 @@ def glob_re(pattern):
 
 
 def covered(eco, d, entries):
-    return any(e in eco and glob_re(pattern).fullmatch(d) for e, pattern in entries)
+    # Only `directories` takes globs; `directory` is matched literally.
+    return any(e in eco and (glob_re(p).fullmatch(d) if is_glob else p == d)
+               for e, p, is_glob in entries)
 
 
 files = [f for f in sys.stdin.read().splitlines() if f]
@@ -81,13 +83,20 @@ for f in files:
 entries, errors = [], []
 cfg = next((p for p in (".github/dependabot.yml", ".github/dependabot.yaml") if os.path.exists(p)), None)
 if cfg:
-    updates = (yaml.safe_load(open(cfg)) or {}).get("updates") or []
-    for i, u in enumerate(updates if isinstance(updates, list) else [updates]):
-        dirs = u.get("directories", [u.get("directory")]) if isinstance(u, dict) else None
+    doc = yaml.safe_load(open(cfg)) or {}
+    updates = doc.get("updates") if isinstance(doc, dict) else None
+    if not isinstance(doc, dict) or doc.get("version") != 2:
+        errors.append(f"{cfg}: needs version: 2")
+    if not isinstance(updates, list):
+        errors.append(f"{cfg}: updates must be a list")
+        updates = []
+    for i, u in enumerate(updates):
+        is_glob = isinstance(u, dict) and "directories" in u
+        dirs = (u["directories"] if is_glob else [u.get("directory")]) if isinstance(u, dict) else None
         if not isinstance(dirs, list) or not all(isinstance(x, str) for x in dirs):
             errors.append(f"{cfg}: updates[{i}] needs a directory string or a directories list")
             continue
-        entries += [(u.get("package-ecosystem"), norm(x)) for x in dirs]
+        entries += [(u.get("package-ecosystem"), norm(x), is_glob) for x in dirs]
 
 missing = [(eco, d, fs) for (eco, d), fs in sorted(want.items(), key=lambda x: x[0][1])
            if not covered(eco, d, entries)]
