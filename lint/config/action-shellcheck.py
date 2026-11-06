@@ -24,6 +24,8 @@ for path in sys.argv[1:]:
         if p.returncode:
             rc = 1
             name = step.get("name") or step.get("id") or f"step {i}"
+            if p.stderr.strip():
+                print(f"{path} [{name}] shellcheck: {p.stderr.strip()}")
             for line in p.stdout.splitlines():
                 # gcc format: file:line:col: msg; line 1 is our shebang.
                 _, ln, rest = line.split(":", 2)
