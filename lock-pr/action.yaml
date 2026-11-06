@@ -1,0 +1,53 @@
+name: 'Lock PR (kleinbem)'
+description: 'Commits an updated flake.lock to a bot branch as a signed commit and makes sure an open PR with auto-merge carries it.'
+
+inputs:
+  token:
+    description: 'GitHub App token with contents: write and pull-requests: write. Its PR triggers the repo checks; one from GITHUB_TOKEN would not.'
+    required: true
+  working-directory:
+    description: 'Checkout holding the updated lock file.'
+    required: false
+    default: '.'
+  lock-file:
+    description: 'Lock file path, relative to working-directory and to the repo root.'
+    required: false
+    default: 'flake.lock'
+  branch:
+    description: 'Bot branch for the PR.'
+    required: false
+    default: 'update-flake-lock'
+  base-sha:
+    description: 'Commit to put the lock commit on, for a caller that extends its open lock PR. Empty resets the branch to main.'
+    required: false
+    default: ''
+  title:
+    description: 'PR title and commit headline.'
+    required: false
+    default: 'chore: update flake.lock'
+  body:
+    description: 'PR body.'
+    required: false
+    default: 'Automated lockfile update. The repo checks re-validate the new inputs on this PR; auto-merge lands it once they pass.'
+
+outputs:
+  pr:
+    description: 'Number of the lock PR, empty when the lock did not change.'
+    value: ${{ steps.pr.outputs.pr }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Commit the lock and open or update its PR
+      id: pr
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ github.repository }}
+        LOCK: ${{ inputs.lock-file }}
+        BRANCH: ${{ inputs.branch }}
+        BASE_SHA: ${{ inputs.base-sha }}
+        TITLE: ${{ inputs.title }}
+        BODY: ${{ inputs.body }}
+      run: '"$GITHUB_ACTION_PATH/lock-pr.sh"'

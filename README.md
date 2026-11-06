@@ -18,7 +18,7 @@ Installs Determinate Nix and, when the job has the secrets, joins NetBird and co
 | Input | Default | What it does |
 |---|---|---|
 | `github-token` | `github.token` | Token for github.com fetches. Pass an App token when the job reads other repos or needs a higher rate limit. |
-| `extra-conf` | | Extra `nix.conf` lines after `trusted-users = root runner`. |
+| `extra-conf` | | Extra `nix.conf` lines after the defaults: `trusted-users = root runner` and `fallback = true` (a failed cache download builds the path instead of failing). |
 | `nix-path` | | Sets `NIX_PATH` for the rest of the job. |
 | `free-disk-space` | `false` | Reclaims ~20 GiB. For NixOS systems and VM tests. |
 | `configure-auto-gc` | `false` | GC when free space drops below 1 GiB. For big closures. |
@@ -31,6 +31,27 @@ Installs Determinate Nix and, when the job has the secrets, joins NetBird and co
 Output `attic` is `'true'` when the cache was configured. The action never pushes: a job that should push does it itself, for example with `nix-fast-build --attic-cache system`, so only paths it really built land in the cache.
 
 The secrets come from `nix/infra/github-secrets.tf` (sops-backed), per repo.
+
+## lock-pr
+
+Commits an updated `flake.lock` to a bot branch (`update-flake-lock`) as a GitHub-signed commit, then makes sure an open PR with auto-merge carries it. If the old PR was closed, it opens a new one rather than reopening, because GitHub refuses to reopen a PR whose branch moved. It fails the step when the PR ends up without auto-merge.
+
+```yaml
+- uses: kleinbem/actions/lock-pr@<sha> # v1.5.0
+  with:
+    token: ${{ steps.app-token.outputs.token }} # contents: write, pull-requests: write
+```
+
+| Input | Default | What it does |
+|---|---|---|
+| `token` | | GitHub App token. A PR from `GITHUB_TOKEN` would not trigger the checks. |
+| `working-directory` | `.` | Checkout holding the updated lock. |
+| `lock-file` | `flake.lock` | Path of the lock in the repo. |
+| `branch` | `update-flake-lock` | Bot branch. |
+| `base-sha` | | Commit to extend (an open lock PR's head). Empty resets the branch to main. |
+| `title`, `body` | | PR title (also the commit headline) and body. |
+
+Output `pr` is the PR number, empty when the lock did not change.
 
 ## actionlint
 
