@@ -26,9 +26,14 @@ if [ "$current" = "$(git hash-object "$LOCK")" ]; then
   # Main has this lock already: an open PR would land an older one. Checked
   # on main itself, which can be ahead of the base.
   pr=$(open_pr)
-  if [ -z "$BASE_SHA" ] && [ -n "$pr" ] &&
-    [ "$(gh api "repos/$REPO/contents/$LOCK?ref=main" --jq .sha)" = "$(git hash-object "$LOCK")" ]; then
-    gh pr close --repo "$REPO" "$pr" --comment "main has this lock already."
+  if [ -z "$BASE_SHA" ] && [ -n "$pr" ]; then
+    if ! on_main=$(gh api "repos/$REPO/contents/$LOCK?ref=main" --jq .sha 2>"$RUNNER_TEMP/lookup.err"); then
+      grep -q 'HTTP 404' "$RUNNER_TEMP/lookup.err" || { cat "$RUNNER_TEMP/lookup.err" >&2; exit 1; }
+      on_main=""
+    fi
+    if [ "$on_main" = "$(git hash-object "$LOCK")" ]; then
+      gh pr close --repo "$REPO" "$pr" --comment "main has this lock already."
+    fi
   fi
   echo "pr=" >> "$GITHUB_OUTPUT"
   exit 0
