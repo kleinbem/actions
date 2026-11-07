@@ -42,8 +42,10 @@ runs:
       run: |
         set -euo pipefail
         # GitHub's Ubuntu runners ship skopeo.
-        command -v skopeo >/dev/null || { echo "::error::image-bump needs skopeo on PATH"; exit 1; }
-        skopeo --version
+        SKOPEO=${SKOPEO:-skopeo}
+        command -v "$SKOPEO" >/dev/null || { echo "::error::image-bump needs skopeo on PATH"; exit 1; }
+        "$SKOPEO" --version
+        export SKOPEO
         args=()
         if [ "$DRY_RUN" = true ]; then args+=(--dry-run); fi
         read -ra spec <<<"$PATHSPEC"

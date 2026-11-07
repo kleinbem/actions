@@ -358,7 +358,7 @@ class GitHub:
                           "--title", title(bump), "--body", body(bump, run_url)).strip()
             number = url.rsplit("/", 1)[-1]
         if self.auto_merge:
-            # Fails when auto-merge is already armed; the check below covers the rest.
+            # gh errors when auto-merge is armed already; the check below covers the rest.
             self.gh("pr", "merge", "--repo", self.repo, number, "--auto", "--squash", check=False)
             state = json.loads(self.gh("pr", "view", "--repo", self.repo, number, "--json", "state,autoMergeRequest"))
             if state["state"] != "MERGED" and not state["autoMergeRequest"]:

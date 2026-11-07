@@ -87,6 +87,37 @@ It lists tags with skopeo, anonymously (`list-tags` doesn't count against Docker
 
 Output `bumps` is a JSON list of the newer tags found (`image`, `from`, `to`, `major`). Tests: `python3 -m unittest discover -s image-bump`.
 
+## image-bump (reusable workflow)
+
+Runs `image-bump` on the caller's repo with its GitHub App token, so the PRs' checks run.
+
+```yaml
+# .github/workflows/image-bump.yaml
+name: Image bump
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        type: boolean
+        default: false
+  schedule:
+    - cron: '45 4 * * *'
+permissions: {}
+jobs:
+  image-bump:
+    uses: kleinbem/actions/.github/workflows/image-bump.yaml@<sha> # v1.7.1
+    with:
+      dry-run: ${{ inputs.dry-run || false }}
+    secrets:
+      app-id: ${{ secrets.APP_ID }}
+      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+| Input | Default | What it does |
+|---|---|---|
+| `pathspec` | `*.nix *.just *justfile *Justfile` | Files to scan. |
+| `dry-run` | `false` | Report only. |
+
 ## actionlint
 
 Lints GitHub Actions workflow files with `actionlint` and `shellcheck`. Requires `shellcheck` and `python3` on `PATH`. Both are preinstalled on Ubuntu GitHub-hosted runners; on macOS runners, install `shellcheck` first (e.g. `brew install shellcheck`).

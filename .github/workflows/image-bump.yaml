@@ -1,0 +1,74 @@
+name: Image bump
+
+# Reusable workflow: the image-bump action on the caller's repo, one PR with
+# auto-merge per annotated image that has a newer tag. Consumers:
+#
+#   on:
+#     workflow_dispatch:
+#       inputs:
+#         dry-run:
+#           type: boolean
+#           default: false
+#     schedule:
+#       - cron: '45 4 * * *'
+#   permissions: {}
+#   jobs:
+#     image-bump:
+#       uses: kleinbem/actions/.github/workflows/image-bump.yaml@<sha> # vX
+#       with:
+#         dry-run: ${{ inputs.dry-run || false }}
+#       secrets:
+#         app-id: ${{ secrets.APP_ID }}
+#         app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+#
+# The App token opens the PRs so their checks run (a GITHUB_TOKEN PR triggers
+# none). APP_ID/APP_PRIVATE_KEY come from nix/infra/github-secrets.tf.
+
+on:
+  workflow_call:
+    inputs:
+      pathspec:
+        description: Space-separated git pathspecs of the files to scan.
+        type: string
+        default: '*.nix *.just *justfile *Justfile'
+      dry-run:
+        description: Report what would be bumped, open no PRs.
+        type: boolean
+        default: false
+    secrets:
+      app-id:
+        required: true
+      app-private-key:
+        required: true
+
+permissions: {}
+
+# Two runs never race on the same image branches.
+concurrency:
+  group: image-bump-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint an App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          # The numeric App ID; create-github-app-token's client-id takes it as the JWT issuer too.
+          client-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - uses: kleinbem/actions/image-bump@d6635f9aacd2f2dbb428b9a72003887be12624c0 # v1.7.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          pathspec: ${{ inputs.pathspec }}
+          dry-run: ${{ inputs.dry-run }}
