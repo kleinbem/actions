@@ -41,15 +41,10 @@ runs:
         DEFAULT_BRANCH: ${{ inputs.default-branch }}
       run: |
         set -euo pipefail
-        # The runner image ships skopeo; with Nix set up, a current one from nixpkgs.
-        if command -v nix >/dev/null; then
-          SKOPEO="$(nix build --no-link --print-out-paths nixpkgs#skopeo.out)/bin/skopeo"
-        else
-          SKOPEO=skopeo
-        fi
-        export SKOPEO
-        "$SKOPEO" --version
+        # GitHub's Ubuntu runners ship skopeo.
+        command -v skopeo >/dev/null || { echo "::error::image-bump needs skopeo on PATH"; exit 1; }
+        skopeo --version
         args=()
-        [ "$DRY_RUN" = true ] && args+=(--dry-run)
+        if [ "$DRY_RUN" = true ]; then args+=(--dry-run); fi
         read -ra spec <<<"$PATHSPEC"
-        python3 "$GITHUB_ACTION_PATH/image_bump.py" "${args[@]}" -- "${spec[@]}"
+        python3 "$GITHUB_ACTION_PATH/image_bump.py" ${args[@]+"${args[@]}"} -- ${spec[@]+"${spec[@]}"}

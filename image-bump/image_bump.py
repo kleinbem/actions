@@ -156,7 +156,10 @@ class Registry:
 
     def _run(self, *args: str) -> str:
         cmd = [self.skopeo, args[0], "--retry-times", "3", *args[1:]]
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except subprocess.TimeoutExpired as e:
+            raise BumpError(f"skopeo {' '.join(args)}: timed out after {e.timeout}s") from e
         if r.returncode:
             raise BumpError(f"skopeo {' '.join(args)}: {r.stderr.strip()}")
         return r.stdout
@@ -355,8 +358,11 @@ class GitHub:
                           "--title", title(bump), "--body", body(bump, run_url)).strip()
             number = url.rsplit("/", 1)[-1]
         if self.auto_merge:
-            # Fails when auto-merge is already armed.
+            # Fails when auto-merge is already armed; the check below covers the rest.
             self.gh("pr", "merge", "--repo", self.repo, number, "--auto", "--squash", check=False)
+            state = json.loads(self.gh("pr", "view", "--repo", self.repo, number, "--json", "state,autoMergeRequest"))
+            if state["state"] != "MERGED" and not state["autoMergeRequest"]:
+                raise BumpError(f"PR #{number} has no auto-merge (state: {state['state']})")
         return number
 
     def close(self, pr: dict, reason: str) -> None:
