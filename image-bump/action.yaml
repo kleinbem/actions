@@ -1,0 +1,55 @@
+name: 'Image bump (kleinbem)'
+description: 'Bumps container image tags pinned in Nix and just files that carry an `image-bump:` annotation, one signed-commit PR with auto-merge per image.'
+
+inputs:
+  token:
+    description: 'GitHub App token with contents: write and pull-requests: write. Its PRs trigger the repo checks; ones from GITHUB_TOKEN would not.'
+    required: true
+  working-directory:
+    description: 'Checkout to scan.'
+    required: false
+    default: '.'
+  pathspec:
+    description: 'Space-separated git pathspecs of the files to scan.'
+    required: false
+    default: '*.nix *.just *justfile *Justfile'
+  dry-run:
+    description: 'true: report what would be bumped, open no PRs.'
+    required: false
+    default: 'false'
+  default-branch:
+    description: 'Branch whose PRs get auto-merge. A run on any other branch opens PRs against it without auto-merge, for testing.'
+    required: false
+    default: ${{ github.event.repository.default_branch }}
+
+outputs:
+  bumps:
+    description: 'JSON list of the newer tags found: [{"image", "from", "to", "major"}].'
+    value: ${{ steps.bump.outputs.bumps }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Bump annotated image tags
+      id: bump
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        PATHSPEC: ${{ inputs.pathspec }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        DEFAULT_BRANCH: ${{ inputs.default-branch }}
+      run: |
+        set -euo pipefail
+        # The runner image ships skopeo; with Nix set up, a current one from nixpkgs.
+        if command -v nix >/dev/null; then
+          SKOPEO="$(nix build --no-link --print-out-paths nixpkgs#skopeo.out)/bin/skopeo"
+        else
+          SKOPEO=skopeo
+        fi
+        export SKOPEO
+        "$SKOPEO" --version
+        args=()
+        [ "$DRY_RUN" = true ] && args+=(--dry-run)
+        read -ra spec <<<"$PATHSPEC"
+        python3 "$GITHUB_ACTION_PATH/image_bump.py" "${args[@]}" -- "${spec[@]}"
