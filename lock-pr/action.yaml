@@ -18,9 +18,13 @@ inputs:
     required: false
     default: 'update-flake-lock'
   base-sha:
-    description: 'Commit to put the lock commit on, for a caller that extends its open lock PR. Empty resets the branch to main.'
+    description: 'Commit to put the lock commit on, for a caller that extends its open lock PR. Empty resets the branch to reset-to.'
     required: false
     default: ''
+  reset-to:
+    description: 'Commit the branch is reset to when base-sha is empty: the one the lock was updated from. A lock change on main since then makes the PR conflict instead of being reverted.'
+    required: false
+    default: ${{ github.sha }}
   title:
     description: 'PR title and commit headline.'
     required: false
@@ -48,6 +52,7 @@ runs:
         LOCK: ${{ inputs.lock-file }}
         BRANCH: ${{ inputs.branch }}
         BASE_SHA: ${{ inputs.base-sha }}
+        RESET_TO: ${{ inputs.reset-to }}
         TITLE: ${{ inputs.title }}
         BODY: ${{ inputs.body }}
       run: '"$GITHUB_ACTION_PATH/lock-pr.sh"'

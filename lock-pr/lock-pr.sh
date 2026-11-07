@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Puts $LOCK from the working tree on $BRANCH and makes sure an open PR with
-# auto-merge carries it. Env: GH_TOKEN REPO LOCK BRANCH BASE_SHA TITLE BODY.
+# auto-merge carries it. Env: GH_TOKEN REPO LOCK BRANCH BASE_SHA RESET_TO TITLE BODY.
 set -euo pipefail
 
 if [ -n "$BASE_SHA" ]; then
   base=$BASE_SHA
   echo "extending $BRANCH at $base"
 else
-  base=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)
+  # Not main's head now: a lock change merged meanwhile must not be reverted.
+  base=$RESET_TO
 fi
 
 open_pr() {
@@ -22,10 +23,17 @@ if ! current=$(gh api "repos/$REPO/contents/$LOCK?ref=$base" --jq .sha 2>"$RUNNE
 fi
 if [ "$current" = "$(git hash-object "$LOCK")" ]; then
   echo "$LOCK unchanged, nothing to do."
-  # Main has this lock already: an open PR would land an older one.
+  # Main has this lock already: an open PR would land an older one. Checked
+  # on main itself, which can be ahead of the base.
   pr=$(open_pr)
   if [ -z "$BASE_SHA" ] && [ -n "$pr" ]; then
-    gh pr close --repo "$REPO" "$pr" --comment "main has this lock already."
+    if ! on_main=$(gh api "repos/$REPO/contents/$LOCK?ref=main" --jq .sha 2>"$RUNNER_TEMP/lookup.err"); then
+      grep -q 'HTTP 404' "$RUNNER_TEMP/lookup.err" || { cat "$RUNNER_TEMP/lookup.err" >&2; exit 1; }
+      on_main=""
+    fi
+    if [ "$on_main" = "$(git hash-object "$LOCK")" ]; then
+      gh pr close --repo "$REPO" "$pr" --comment "main has this lock already."
+    fi
   fi
   echo "pr=" >> "$GITHUB_OUTPUT"
   exit 0
