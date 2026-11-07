@@ -23,6 +23,7 @@ on:
   workflow_call:
     secrets:
       # Not required: other PRs call this too and have no Dependabot secrets.
+      # The numeric App ID; create-github-app-token's client-id takes it as the JWT issuer too.
       app-id:
         required: false
       app-private-key:
@@ -94,7 +95,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.app-id }}
+          client-id: ${{ secrets.app-id }}
           private-key: ${{ secrets.app-private-key }}
           permission-contents: write
           permission-pull-requests: write

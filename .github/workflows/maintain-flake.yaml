@@ -31,6 +31,7 @@ on:
         type: string
         default: ''
     secrets:
+      # The numeric App ID; create-github-app-token's client-id takes it as the JWT issuer too.
       app-id:
         required: true
       app-private-key:
@@ -51,7 +52,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.app-id }}
+          client-id: ${{ secrets.app-id }}
           private-key: ${{ secrets.app-private-key }}
           permission-contents: read
 
@@ -79,7 +80,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.app-id }}
+          client-id: ${{ secrets.app-id }}
           private-key: ${{ secrets.app-private-key }}
           permission-contents: write
           permission-pull-requests: write
