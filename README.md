@@ -54,6 +54,39 @@ Commits an updated `flake.lock` to a bot branch (`update-flake-lock`) as a GitHu
 
 Output `pr` is the PR number, empty when the lock did not change.
 
+## image-bump
+
+Keeps container image tags current where Dependabot can't parse them: Nix strings, `just` recipes. A pin opts in with an annotation naming its scheme, at the end of its line or on a comment line right above it:
+
+```nix
+image = "ghcr.io/goauthentik/server:2026.8.5"; # image-bump: calver
+```
+
+| Scheme | Picks the newest tag that |
+|---|---|
+| `semver`, `calver` | has the current tag's shape: same `v` prefix, same number of numeric parts. Pre-releases (`-rc1`, `.dev3`) and moving aliases (`2026.8` next to `2026.8.5`) never match |
+| `ubuntu-lts` | is an LTS release (`YY.04`, even year) |
+| `alias:<tag>` | has the current shape and is the same image as `<tag>` (`alias:latest` for Fedora, where `46` is rawhide) |
+| `regex:<re>` | fully matches `<re>`, compared by number runs (`regex:^xpu-\d{8}$`) |
+
+It lists tags with skopeo, anonymously (`list-tags` doesn't count against Docker Hub's pull limit; label and `alias:` lookups read a manifest and do). For each image with a newer tag it commits the change as a GitHub-signed commit to `image-bump/<image>` and opens a PR with auto-merge, one per image. Majors are proposed too, flagged in the PR body; when the image has an `org.opencontainers.image.source` label on GitHub, the body links the release notes. A PR already proposing the same tag is left alone; one for a newer tag is replaced; one for an image that is current on main is closed. A run on a branch other than the default opens PRs against that branch without auto-merge, for tests. Unannotated pins are ignored, so leaving the annotation off excludes one.
+
+```yaml
+- uses: kleinbem/actions/image-bump@<sha> # v1.7.0
+  with:
+    token: ${{ steps.app-token.outputs.token }} # contents: write, pull-requests: write
+```
+
+| Input | Default | What it does |
+|---|---|---|
+| `token` | | GitHub App token. A PR from `GITHUB_TOKEN` would not trigger the checks. |
+| `working-directory` | `.` | Checkout to scan (a git work tree). |
+| `pathspec` | `*.nix *.just *justfile *Justfile` | Files to scan, as git pathspecs. |
+| `dry-run` | `false` | Report only, open no PRs. |
+| `default-branch` | the repo's | Branch whose PRs get auto-merge. |
+
+Output `bumps` is a JSON list of the newer tags found (`image`, `from`, `to`, `major`). Tests: `python3 -m unittest discover -s image-bump`.
+
 ## actionlint
 
 Lints GitHub Actions workflow files with `actionlint` and `shellcheck`. Requires `shellcheck` and `python3` on `PATH`. Both are preinstalled on Ubuntu GitHub-hosted runners; on macOS runners, install `shellcheck` first (e.g. `brew install shellcheck`).
