@@ -15,6 +15,7 @@
           name = "fleet-lint-tools";
           paths = with pkgs; [
             actionlint
+            deadnix
             git
             gitleaks
             hadolint
@@ -24,6 +25,7 @@
             (python3.withPackages (ps: [ ps.pyyaml ]))
             ruff
             shellcheck
+            statix
             tflint
             trivy
             yamllint
