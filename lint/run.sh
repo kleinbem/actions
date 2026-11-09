@@ -65,6 +65,20 @@ if [ ${#shs[@]} -gt 0 ]; then
   check shellcheck shellcheck -e SC1091 "${shs[@]}"
 fi
 
+# --- Nix ---
+# The Clippy of Nix: deadnix finds unused bindings and arguments, statix
+# anti-patterns. A repo's statix.toml applies; statix checks one file at a time.
+mapfile -t nixs < <(match '\.nix$')
+statix_run() {
+  local f rc=0
+  for f in "${nixs[@]}"; do statix check "$f" || rc=1; done
+  return $rc
+}
+if [ ${#nixs[@]} -gt 0 ]; then
+  check deadnix deadnix --fail "${nixs[@]}"
+  check statix statix_run
+fi
+
 # --- YAML ---
 mapfile -t ymls < <(match '\.ya?ml$')
 if [ ${#ymls[@]} -gt 0 ]; then

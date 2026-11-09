@@ -168,6 +168,8 @@ jobs:
 | action-shellcheck | composite `action.yaml` | actionlint doesn't read them |
 | zizmor | workflows, actions, `dependabot.yml` | fails on medium and up |
 | shellcheck | `*.sh`, `*.bash`, shell shebangs | |
+| deadnix | `*.nix` | unused bindings, arguments and imports |
+| statix | `*.nix` | Nix anti-patterns; a repo's `statix.toml` applies |
 | yamllint | YAML | correctness rules only |
 | ruff | Python | `E4,E7,E9,F,S` minus `S101,S603,S607`, ignoring the repo's own rule set |
 | markdownlint | Markdown | broken links, anchors and tables only |

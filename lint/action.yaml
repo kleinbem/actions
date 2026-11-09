@@ -1,5 +1,5 @@
 name: 'fleet-lint (kleinbem)'
-description: 'Secret scan, workflow, shell, YAML, Python, Markdown, Dockerfile, OpenTofu and dependency checks; each runs when its files exist.'
+description: 'Secret scan, workflow, shell, Nix, YAML, Python, Markdown, Dockerfile, OpenTofu and dependency checks; each runs when its files exist.'
 
 inputs:
   github-token:
