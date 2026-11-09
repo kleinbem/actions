@@ -67,11 +67,14 @@ fi
 
 # --- Nix ---
 # The Clippy of Nix: deadnix finds unused bindings and arguments, statix
-# anti-patterns. A repo's statix.toml applies; statix checks one file at a time.
+# anti-patterns. A repo's statix.toml applies: statix checks one file at a
+# time and ignores its `ignore` globs for an explicit file, so filter here.
 mapfile -t nixs < <(match '\.nix$')
 statix_run() {
   local f rc=0
-  for f in "${nixs[@]}"; do statix check "$f" || rc=1; done
+  local -a checked
+  mapfile -t checked < <(printf '%s\n' "${nixs[@]}" | python3 "$cfg/statix-ignore.py")
+  for f in ${checked[@]+"${checked[@]}"}; do statix check "$f" || rc=1; done
   return $rc
 }
 if [ ${#nixs[@]} -gt 0 ]; then
