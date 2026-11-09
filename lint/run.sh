@@ -11,8 +11,10 @@ skip=" ${LINT_SKIP:-} "
 failed=()
 ran=()
 
-# Tracked files only: build outputs and vendored checkouts stay out.
-mapfile -t files < <(git ls-files)
+# Tracked files only: build outputs and vendored checkouts stay out. NUL-
+# separated, since git quotes unusual names (spaces, umlauts) and a quoted
+# path no longer matches its extension.
+mapfile -d '' -t files < <(git ls-files -z)
 match() { printf '%s\n' "${files[@]}" | grep -E "$1" || true; }
 
 check() {
