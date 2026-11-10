@@ -1,0 +1,82 @@
+name: Dispatch lock bump
+
+# Reusable workflow: requests nix-config's Maintain Flake to bump this repo's
+# flake input right after its main branch turns green.
+#
+# on:
+#   workflow_run:
+#     workflows: ["Check Flake"]
+#     branches: [main]
+#     types: [completed]
+# permissions: {}
+# jobs:
+#   dispatch:
+#     if: >-
+#       github.event.workflow_run.conclusion == 'success' &&
+#       github.event.workflow_run.event == 'push' &&
+#       github.event.workflow_run.head_repository.full_name == github.repository
+#     uses: kleinbem/actions/.github/workflows/dispatch-lock-bump.yaml@<sha> # v1.8.0
+#     with:
+#       sha: ${{ github.event.workflow_run.head_sha }}
+#     secrets:
+#       app-id: ${{ secrets.APP_ID }}
+#       app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+#     with:
+#       input: ${{ github.event.repository.name }}
+#       sha: ${{ github.event.workflow_run.head_sha }}
+
+on:
+  workflow_call:
+    inputs:
+      target-owner:
+        description: Owner of the target repo to dispatch to
+        type: string
+        default: kleinbem
+      target-repo:
+        description: Target repo to receive the repository_dispatch
+        type: string
+        default: nix-config
+      input:
+        description: Flake input name to bump in nix-config (defaults to caller repo name)
+        type: string
+        default: ""
+      sha:
+        description: Commit SHA to record in client_payload (defaults to caller sha)
+        type: string
+        default: ""
+    secrets:
+      app-id:
+        required: true
+      app-private-key:
+        required: true
+
+permissions: {}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint GitHub App token for target repo
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          owner: ${{ inputs.target-owner }}
+          repositories: ${{ inputs.target-repo }}
+          permission-contents: write
+
+      - name: Ask Maintain Flake to bump this input
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          OWNER: ${{ inputs.target-owner }}
+          TARGET: ${{ inputs.target-repo }}
+          INPUT: ${{ inputs.input || github.event.repository.name }}
+          SHA: ${{ inputs.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$OWNER/$TARGET/dispatches" \
+            -f event_type=lock-bump \
+            -f "client_payload[inputs]=$INPUT" \
+            -f "client_payload[sha]=$SHA"
+          echo "requested $TARGET lock bump of '$INPUT' at $SHA"
