@@ -251,6 +251,8 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     uses: kleinbem/actions/.github/workflows/dispatch-lock-bump.yaml@<sha> # v1.8.0
+    with:
+      sha: ${{ github.event.workflow_run.head_sha }}
     secrets:
       app-id: ${{ secrets.APP_ID }}
       app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
