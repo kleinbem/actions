@@ -231,6 +231,38 @@ jobs:
 | `validate` | `nix flake check --no-build` | Shell (bash, `-euo pipefail`) run on the updated lock. A failure stops before the PR. |
 | `nix-path` | | `NIX_PATH` for the update and validation, e.g. `nixpkgs=channel:nixos-unstable`. |
 
+## dispatch-lock-bump (reusable workflow)
+
+Asks `nix-config`'s Maintain Flake to bump this repo's flake input right after its main branch turns green:
+
+```yaml
+# .github/workflows/dispatch-lock-bump.yaml
+name: Dispatch nix-config lock bump
+on:
+  workflow_run:
+    workflows: ["Check Flake"]
+    branches: [main]
+    types: [completed]
+permissions: {}
+jobs:
+  dispatch:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    uses: kleinbem/actions/.github/workflows/dispatch-lock-bump.yaml@<sha> # v1.8.0
+    secrets:
+      app-id: ${{ secrets.APP_ID }}
+      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+| Input | Default | What it does |
+|---|---|---|
+| `target-owner` | `kleinbem` | Owner of the target repository. |
+| `target-repo` | `nix-config` | Target repository to receive the `repository_dispatch`. |
+| `input` | caller repo name | Flake input name to bump in nix-config. |
+| `sha` | caller commit SHA | Commit SHA recorded in client_payload. |
+
 ## Versioning
 
 Consumers pin a full commit sha with the release tag as a comment; Dependabot bumps it. Releases are `vMAJOR.MINOR.PATCH` tags, and `vMAJOR` moves with them. Breaking input changes bump the major.
