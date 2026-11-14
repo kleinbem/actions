@@ -39,11 +39,22 @@ if [ "$current" = "$(git hash-object "$LOCK")" ]; then
   exit 0
 fi
 
+commit_branch=$BRANCH
+tmp_branch=""
+cleanup() {
+  [ -z "$tmp_branch" ] || gh api -X DELETE "repos/$REPO/git/refs/heads/$tmp_branch" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
 if [ -z "$BASE_SHA" ]; then
-  if gh api "repos/$REPO/git/ref/heads/$BRANCH" >/dev/null 2>&1; then
-    gh api -X PATCH "repos/$REPO/git/refs/heads/$BRANCH" -f sha="$base" -F force=true >/dev/null
-  else
-    gh api "repos/$REPO/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$base" >/dev/null
+  # Stage the signed commit on a scratch ref so $BRANCH never points at $base:
+  # resetting $BRANCH to main's ancestor queues an async zero-diff PR close.
+  # no-link: GitHub closes zero-diff PRs by design and createCommitOnBranch requires a branch ref.
+  tmp_branch="${BRANCH}-stage-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}"
+  commit_branch=$tmp_branch
+  if ! gh api "repos/$REPO/git/refs" -f ref="refs/heads/$tmp_branch" -f sha="$base" >/dev/null 2>"$RUNNER_TEMP/ref.err"; then
+    grep -q 'Reference already exists' "$RUNNER_TEMP/ref.err" || { cat "$RUNNER_TEMP/ref.err" >&2; exit 1; }
+    gh api -X PATCH "repos/$REPO/git/refs/heads/$tmp_branch" -f sha="$base" -F force=true >/dev/null
   fi
 fi
 
@@ -51,8 +62,8 @@ fi
 # The content goes through a file: a big lock in base64 can pass the 128 KiB
 # limit for one argument.
 base64 <"$LOCK" | tr -d '\n' >"$RUNNER_TEMP/lock.b64" # GNU and BSD base64 alike
-jq -n \
-  --arg repo "$REPO" --arg branch "$BRANCH" --arg sha "$base" \
+commit_oid=$(jq -n \
+  --arg repo "$REPO" --arg branch "$commit_branch" --arg sha "$base" \
   --arg path "$LOCK" --rawfile content "$RUNNER_TEMP/lock.b64" --arg headline "$TITLE" \
   --arg query 'mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }' \
   '{query: $query, variables: {input: {
@@ -60,22 +71,56 @@ jq -n \
       message: {headline: $headline},
       expectedHeadOid: $sha,
       fileChanges: {additions: [{path: $path, contents: $content}]}
-  }}}' | gh api graphql --input - >/dev/null
-
-# Only an open PR counts. A reset can close the old one (zero diff for an
-# instant), and a closed PR can't always be reopened once its branch moved,
-# so open a new one instead.
-pr=$(open_pr)
-if [ -z "$pr" ]; then
-  # A concurrent run can open it first; then use that one.
-  gh pr create --repo "$REPO" --head "$BRANCH" --base main --title "$TITLE" --body "$BODY" || true
-  pr=$(open_pr)
-  [ -n "$pr" ] || { echo "::error::no open PR for $BRANCH" >&2; exit 1; }
+  }}}' | gh api graphql --input - --jq '.data.createCommitOnBranch.commit.oid')
+if [ -z "$commit_oid" ] || [ "$commit_oid" = "null" ]; then
+  echo "::error::createCommitOnBranch returned no commit oid" >&2
+  exit 1
 fi
-echo "pr=$pr" >> "$GITHUB_OUTPUT"
 
-# Fails when auto-merge is already armed; the check below covers the rest.
-gh pr merge --repo "$REPO" "$pr" --auto --squash || true
+if [ -z "$BASE_SHA" ]; then
+  if gh api "repos/$REPO/git/ref/heads/$BRANCH" >/dev/null 2>&1; then
+    if ! gh api -X PATCH "repos/$REPO/git/refs/heads/$BRANCH" -f sha="$commit_oid" -F force=true >/dev/null 2>"$RUNNER_TEMP/ref.err"; then
+      grep -q 'Reference does not exist' "$RUNNER_TEMP/ref.err" || { cat "$RUNNER_TEMP/ref.err" >&2; exit 1; }
+      gh api "repos/$REPO/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$commit_oid" >/dev/null
+    fi
+  elif ! gh api "repos/$REPO/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$commit_oid" >/dev/null 2>"$RUNNER_TEMP/ref.err"; then
+    grep -q 'Reference already exists' "$RUNNER_TEMP/ref.err" || { cat "$RUNNER_TEMP/ref.err" >&2; exit 1; }
+    gh api -X PATCH "repos/$REPO/git/refs/heads/$BRANCH" -f sha="$commit_oid" -F force=true >/dev/null
+  fi
+  cleanup
+  tmp_branch=""
+fi
 
-gh pr view --repo "$REPO" "$pr" --json number,state,autoMergeRequest \
-  --jq 'if .state == "MERGED" or (.state == "OPEN" and .autoMergeRequest != null) then "lock PR #\(.number): \(.state), auto-merge armed" else error("lock PR #\(.number) has no auto-merge (state: \(.state))") end'
+ensure_open_pr() {
+  pr=$(open_pr)
+  if [ -z "$pr" ]; then
+    # A concurrent run can open it first; then use that one.
+    gh pr create --repo "$REPO" --head "$BRANCH" --base main --title "$TITLE" --body "$BODY" || true
+    pr=$(open_pr)
+    [ -n "$pr" ] || { echo "::error::no open PR for $BRANCH" >&2; exit 1; }
+  fi
+}
+
+# Re-open once if an existing PR closes concurrently before recording GITHUB_OUTPUT.
+# no-link: concurrent PR merge/close during branch update is normal GitHub state, not an upstream bug.
+for attempt in 1 2; do
+  ensure_open_pr
+  gh pr merge --repo "$REPO" "$pr" --auto --squash || true
+  status=$(gh pr view --repo "$REPO" "$pr" --json number,state,autoMergeRequest \
+    --jq 'if .state == "MERGED" or (.state == "OPEN" and .autoMergeRequest != null) then "ok:lock PR #\(.number): \(.state), auto-merge armed" elif .state == "CLOSED" then "closed" else "err:lock PR #\(.number) has no auto-merge (state: \(.state))" end')
+  case "$status" in
+    ok:*)
+      echo "${status#ok:}"
+      echo "pr=$pr" >> "$GITHUB_OUTPUT"
+      exit 0
+      ;;
+    closed)
+      [ "$attempt" -eq 1 ] || { echo "::error::lock PR #$pr closed repeatedly" >&2; exit 1; }
+      echo "lock PR #$pr closed concurrently, opening a new one"
+      ;;
+    err:*)
+      echo "::error::${status#err:}" >&2
+      exit 1
+      ;;
+  esac
+done
