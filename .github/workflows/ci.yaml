@@ -43,6 +43,15 @@ jobs:
       - uses: ./nix-setup
       - uses: ./lint
 
+  lock-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Unit tests
+        run: python3 -m unittest discover -s lock-pr -v
+
   # Unit tests on recorded tag lists, then a dry run against the live
   # registry on a fixture pin that is behind (ghcr: no pull limits).
   image-bump:
