@@ -61,7 +61,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
 
-      - uses: kleinbem/actions/nix-setup@872d4ed3eeb3da51d0bbe60e5ef3cbf6ece91e8e # v1.6.1
+      - uses: kleinbem/actions/nix-setup@8e2e0953476f4ca6ed3f5b7fbe5d6825f20a2e09 # v1.9.1
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           nix-path: ${{ inputs.nix-path }}
@@ -87,6 +87,6 @@ jobs:
 
       - name: Open or update the lock PR
         if: github.ref == 'refs/heads/main'
-        uses: kleinbem/actions/lock-pr@872d4ed3eeb3da51d0bbe60e5ef3cbf6ece91e8e # v1.6.1
+        uses: kleinbem/actions/lock-pr@8e2e0953476f4ca6ed3f5b7fbe5d6825f20a2e09 # v1.9.1
         with:
           token: ${{ steps.pr-token.outputs.token }}
