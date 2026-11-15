@@ -156,19 +156,26 @@ fi
 # skips bot PRs anyway.
 cr_review_paths='^\.github/|\.tf$|(^|/)\.sops\.ya?ml$|(^|/)[^/]*(secret|sops|ssh|firewall|network|wireguard|auth|tls|cert)[^/]*(/|$)'
 cr_review_run() {
-  local changed risky labels f
-  changed=$(git diff --name-only "$LINT_BASE...$LINT_HEAD")
-  risky=$(grep -E "$cr_review_paths" <<<"$changed" || true)
-  [ -n "$risky" ] || return 0
-  labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$LINT_PR/labels" --jq '.[].name')
+  local list f labels risky=()
+  list=$(mktemp)
+  # NUL-separated: git quotes unusual names, and a quoted path no longer matches.
+  if ! git diff -z --name-only "$LINT_PR_BASE...$LINT_PR_HEAD" >"$list"; then
+    echo "can't diff $LINT_PR_BASE...$LINT_PR_HEAD: check out with fetch-depth: 0"
+    rm -f "$list"; return 1
+  fi
+  while IFS= read -r -d '' f; do
+    [[ $f =~ $cr_review_paths ]] && risky+=("$f")
+  done <"$list"
+  rm -f "$list"
+  [ ${#risky[@]} -gt 0 ] || return 0
+  labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$LINT_PR/labels" --jq '.[].name') || return 1
   if grep -qx cr-review <<<"$labels"; then return 0; fi
   echo "These files need a CodeRabbit review:"
-  while IFS= read -r f; do echo "  $f"; done <<<"$risky"
+  printf '  %s\n' "${risky[@]}"
   echo "Add the cr-review label to the PR, then re-run this job."
   return 1
 }
-if [ -n "${LINT_PR:-}" ] && [ "${LINT_PRIVATE:-}" != true ] && [ "${LINT_PR_BOT:-}" != true ] \
-  && [ -n "${LINT_BASE:-}" ]; then
+if [ -n "${LINT_PR:-}" ] && [ "${LINT_PRIVATE:-}" != true ] && [ "${LINT_PR_BOT:-}" != true ]; then
   check cr-review cr_review_run
 fi
 
