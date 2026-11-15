@@ -177,6 +177,7 @@ jobs:
 | tofu, tflint, trivy | `*.tf` | fmt + validate per directory; trivy HIGH and CRITICAL |
 | dependabot-coverage | always | each workflow dir, composite action using `uses:`, manifest (npm, cargo, gomod, pip/uv, docker, compose, OpenTofu root, …) needs a `dependabot.yml` entry for its directory |
 | osv-scanner | language lockfiles | not the Nix closure |
+| cr-review | a public repo's PR (not from a bot) touching `.github/`, `*.tf`, sops, or secret, SSH, firewall, network, auth or TLS paths | fails unless the PR has the `cr-review` label, which turns on its CodeRabbit review; add it and re-run |
 
 | Input | Default | What it does |
 |---|---|---|

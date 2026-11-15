@@ -53,6 +53,11 @@ runs:
         LINT_BASE: ${{ steps.range.outputs.base }}
         LINT_HEAD: ${{ steps.range.outputs.head }}
         LINT_SKIP: ${{ inputs.skip }}
+        LINT_PR: ${{ github.event.pull_request.number }}
+        LINT_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        LINT_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        LINT_PRIVATE: ${{ github.event.repository.private }}
+        LINT_PR_BOT: ${{ github.event.pull_request.user.type == 'Bot' }}
         GH_TOKEN: ${{ inputs.github-token }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
