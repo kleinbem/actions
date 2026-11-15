@@ -149,6 +149,29 @@ if [ -n "$(match '(^|/)(Cargo\.lock|package-lock\.json|pnpm-lock\.yaml|yarn\.loc
   check osv-scanner osv-scanner scan source -r .
 fi
 
+# --- CodeRabbit opt-in ---
+# CodeRabbit reviews only PRs labelled cr-review (about one review per hour and
+# repo on the free plan). Risky paths must carry the label; for the rest the
+# author decides (agent-ops skill). Private repos have no CodeRabbit, and it
+# skips bot PRs anyway.
+cr_review_paths='^\.github/|\.tf$|(^|/)\.sops\.ya?ml$|(^|/)[^/]*(secret|sops|ssh|firewall|network|wireguard|auth|tls|cert)[^/]*(/|$)'
+cr_review_run() {
+  local changed risky labels f
+  changed=$(git diff --name-only "$LINT_BASE...$LINT_HEAD")
+  risky=$(grep -E "$cr_review_paths" <<<"$changed" || true)
+  [ -n "$risky" ] || return 0
+  labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$LINT_PR/labels" --jq '.[].name')
+  if grep -qx cr-review <<<"$labels"; then return 0; fi
+  echo "These files need a CodeRabbit review:"
+  while IFS= read -r f; do echo "  $f"; done <<<"$risky"
+  echo "Add the cr-review label to the PR, then re-run this job."
+  return 1
+}
+if [ -n "${LINT_PR:-}" ] && [ "${LINT_PRIVATE:-}" != true ] && [ "${LINT_PR_BOT:-}" != true ] \
+  && [ -n "${LINT_BASE:-}" ]; then
+  check cr-review cr_review_run
+fi
+
 echo
 echo "passed: ${ran[*]:-none}"
 if [ ${#failed[@]} -gt 0 ]; then
