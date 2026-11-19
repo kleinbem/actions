@@ -210,7 +210,8 @@ runs:
         CA_CERT: ${{ inputs.ca-cert != '' && inputs.ca-cert || format('{0}/caddy-root.crt', github.action_path) }}
       run: |
         set -euo pipefail
-        sudo cp "$CA_CERT" /usr/local/share/ca-certificates/kleinbem-caddy-root.crt
+        # Disk-purging steps (nothing-but-nix cleave) can remove this directory.
+        sudo install -D -m 0644 "$CA_CERT" /usr/local/share/ca-certificates/kleinbem-caddy-root.crt
         sudo update-ca-certificates
         echo "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" >> "$GITHUB_ENV"
         echo "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" >> "$GITHUB_ENV"
