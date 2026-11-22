@@ -73,7 +73,7 @@ runs:
         rmz_version: "3.1.1"
 
     - name: Install Nix (Determinate)
-      uses: DeterminateSystems/determinate-nix-action@92957199488000b908fdad19f63711000965d8f3 # v3.24.1
+      uses: DeterminateSystems/determinate-nix-action@16f94ba7aae399b9f9077c254b6719ec6de7e3e3 # v3.24.2
       with:
         github-token: ${{ inputs.github-token }}
         # Determinate's daemon owns /etc/nix/nix.conf, so settings appended
